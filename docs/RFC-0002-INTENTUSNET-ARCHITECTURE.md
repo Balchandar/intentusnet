@@ -64,15 +64,11 @@ IntentusNet defines a secure, semantic agent communication framework layered on 
 
 # Example Flow
 
+# Example Flow
+
 ```mermaid
 flowchart LR
     Client --> Gateway
     Gateway --> Orchestrator
     Orchestrator --> AgentA
     Orchestrator --> AgentB
-
-# Copyright
-
-All text, diagrams, and specifications in this RFC are part of the **IntentusNet** project.  
-Copyright © 2025 Balachandar Manikandan.  
-Licensed under the [MIT License](https://opensource.org/licenses/MIT).
