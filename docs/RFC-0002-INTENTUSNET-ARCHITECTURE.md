@@ -62,14 +62,14 @@ IntentusNet defines a secure, semantic agent communication framework layered on 
 
 ---
 
-## Example Flow
+# Example Flow
 
 ```mermaid
 flowchart LR
-    Client --> |EMCL Intent| Gateway
-    Gateway --> |Policy+Registry| Router
-    Router --> Agent1 & Agent2
-    Agent1 --> Router --> Gateway --> Client
+    Client --> Gateway
+    Gateway --> Orchestrator
+    Orchestrator --> AgentA
+    Orchestrator --> AgentB
 
 # Copyright
 
