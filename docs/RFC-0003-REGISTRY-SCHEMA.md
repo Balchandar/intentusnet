@@ -229,4 +229,6 @@ Registry must enforce:
 - Distributed registry synchronization  
 - Hot-reloadable agent definitions  
 
-
+Implementation Status:
+- Core Features: Implemented
+- Extended Features: Roadmap (not yet available)
