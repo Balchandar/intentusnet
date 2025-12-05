@@ -320,3 +320,7 @@ This routing logic is **fully implemented in IntentusNet v1.0** and corresponds 
 - demo agents
 
 The fallback system is validated via orchestrator demo.
+
+Implementation Status:
+- Core Features: Implemented
+- Extended Features: Roadmap (not yet available)
