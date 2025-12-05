@@ -224,6 +224,16 @@ MIT License — open and commercial-friendly.
 
 ---
 
+## 🔑 Keywords
+AI Agents, Agent Runtime, Orchestration Framework, Multi-Agent System,
+Intent Routing, Fallback Routing, Workflow Orchestrator, EMCL Encryption,
+Secure AI, MCP Compatible, Distributed Systems, ZeroMQ Transport,
+Language-Agnostic Architecture, Agent Registry, Capability Schema,
+JSON-RPC, Tracing & Observability, LLM Tooling, Agent-to-Agent Calls,
+Secure Payload Layer.
+
+---
+
 ## ⭐ Summary
 
 IntentusNet is a secure, language-agnostic AI Agent Runtime & Orchestration Framework.
