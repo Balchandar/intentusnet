@@ -1,83 +1,322 @@
-# RFC-0004: IntentusNet Routing Rules
+# RFC-0004 — IntentusNet Routing Rules Specification
+### Status: Draft  
+### Version: 1.0  
+### Author: Balachandar  
+### Last Updated: 2025-12-05  
 
-## Status
-Draft
+---
 
-## Abstract
-This RFC defines the routing rules for IntentusNet. It describes how the Intent Router selects agents based on priority, trust, fallback, qualifiers, and availability, ensuring secure, resilient, and deterministic intent delivery.
+# 1. Purpose
 
-## Routing Principles
+This RFC defines the **routing rules**, **decision flow**, and **fallback mechanisms** used by the IntentusNet runtime.
 
-1. **Priority First**: Agents with higher priority values are selected before lower-priority ones.
+Routing determines:
+- Which agent handles a given intent  
+- How fallback chains are applied  
+- How target overrides work  
+- How routing metadata is generated  
+- How errors propagate across agents  
 
-2. **Trust-Based Routing**: Use `trust.score` from the registry to break ties when multiple agents have equal priority. Thresholds may be configured to exclude low-trust agents.
+This specification reflects the behavior implemented in `router.py` for v1.0.
 
-3. **Availability Enforcement**: Only agents with `availability=online` are considered primary. `degraded` agents may be selected if no online agents exist and fallback rules permit.
+---
 
-4. **Fallback Handling**: Agents marked `routing.fallback=true` can be used if no primary agent succeeds. Fallback may be combined with priority and trust scoring.
+# 2. Inputs to the Routing Engine
 
-5. **Qualifier Relaxation**: If intent qualifiers are not strictly matched, the router may relax them in order of importance. Example: `specialty` required → if no match, pick closest available agent.
+Routing depends on five primary inputs:
 
-6. **Deterministic Selection**: Routing must be deterministic given the same input. Random selection only used when tie-breaking among equally ranked agents.
+### **1. IntentEnvelope**
+Contains:
+- intent name + version  
+- payload  
+- priority  
+- metadata (traceId, correlationId)  
+- routing options (targetAgent, fallbackAgents, broadcast)  
 
-## Routing Algorithm (Pseudo-Code)
+---
+
+### **2. Agent Registry**
+Provides:
+- candidate agents for the intent  
+- capability-level fallback rules  
+- agent runtime metadata  
+
+---
+
+### **3. RoutingOptions**
+```
+RoutingOptions:
+  targetAgent: string | null
+  broadcast: bool
+  fallbackAgents: string[]
+```
+
+---
+
+### **4. Agent Capabilities**
+```
+Capability:
+  intent: IntentRef
+  fallbackAgents: string[]
+```
+
+---
+
+### **5. Router configuration**
+- trace sink  
+- error mapping  
+- routing strategy behavior  
+
+---
+
+# 3. Routing Flow (High Level)
+
+Routing proceeds as follows:
 
 ```
-function selectAgent(intent, candidateAgents):
-    # Filter by availability
-    primaryAgents = filter(candidateAgents, availability='online')
-    if empty(primaryAgents):
-        primaryAgents = filter(candidateAgents, fallback=true)
-
-    # Rank by priority
-    ranked = sort(primaryAgents, by='priority DESC')
-
-    # Break ties using trust.score
-    ranked = sort(ranked, by='trust.score DESC')
-
-    # Apply qualifier relaxation if needed
-    for agent in ranked:
-        if agent.matches(intent.qualifiers):
-            return agent
-
-    # If none matched, use fallback if allowed
-    for agent in ranked:
-        if agent.routing.fallback:
-            return agent
-
-    return null
+1. Accept IntentEnvelope
+2. Identify candidate agents
+3. Determine primary agent
+4. Determine fallback order
+5. Execute agent
+6. If failure → fallback loop
+7. If all fallback exhausted → error
+8. Record trace span
+9. Return AgentResponse
 ```
 
-## Examples
+---
 
-**Example 1: Priority Selection**
+# 4. Candidate Agent Discovery
 
-- Agent A → priority=1, trust=0.9, availability=online  
-- Agent B → priority=2, trust=0.8, availability=online  
+The router requests:
 
-**Selected:** Agent A (higher priority)
+```python
+registry.find_agents_for_intent(env.intent)
+```
 
-**Example 2: Fallback**
+Matching rules:
 
-- Agent A → priority=1, availability=offline, fallback=false  
-- Agent B → priority=2, availability=offline, fallback=true  
+- `intent.name` must match exactly  
+- `intent.version` must match exactly  
+- At least one capability must match  
 
-**Selected:** Agent B (fallback agent)
+If zero agents match → `RoutingError`.
 
-**Example 3: Trust Tie-Breaker**
+---
 
-- Agent A → priority=1, trust=0.95, availability=online  
-- Agent B → priority=1, trust=0.85, availability=online  
+# 5. Primary Agent Selection
 
-**Selected:** Agent A (higher trust)
+Selection priority:
 
-## Notes
+1. **Envelope target override**
+   ```json
+   "routing": { "targetAgent": "classifier" }
+   ```
+   MUST route to that agent (if registered).
 
-- Routers MAY log routing decisions for observability and auditing.  
-- Configuration parameters like max candidates, strict qualifier matching, and trust thresholds are environment-specific.  
-- Adapters wrapping IntentusNet in MCP must maintain deterministic routing before serialization.
+2. **Registry order**
+   The first matching capability provider becomes primary.
 
-## Copyright
-All text, diagrams, and specifications in this RFC are part of the IntentusNet project.  
-Copyright © 2025 Balachandar Manikandan.  
-Licensed under the MIT License.
+3. **Future extensions**
+   - Scoring  
+   - Health  
+   - Latency tracking  
+
+---
+
+# 6. Fallback Strategy (Core of RFC)
+
+### **Fallback Precedence**
+```
+1. Envelope-level fallbackAgents (override)
+2. Capability-level fallbackAgents (registry default)
+3. No fallback defined → error on failure
+```
+
+---
+
+## 6.1 Envelope Fallback Override
+
+If present:
+
+```json
+"fallbackAgents": ["agentA", "agentB"]
+```
+
+Router MUST use this override **and ignore registry entries**.
+
+---
+
+## 6.2 Registry Fallback (Capability-Based)
+
+Example:
+
+```
+Capability(
+  intent=IntentRef("storeDocument"),
+  fallbackAgents=["secondaryStorage"]
+)
+```
+
+Router MUST use this fallback chain unless envelope overrides it.
+
+---
+
+## 6.3 Fallback Execution Loop
+
+```
+attempt = 1
+while True:
+    try primary agent
+    if success → return
+    if no fallback left → error
+    else switch to next fallback agent
+    attempt += 1
+```
+
+Fallback MUST preserve:
+
+- traceId  
+- workflowId  
+- context memory  
+
+---
+
+# 7. RoutingMetadata Rules
+
+Router MUST update:
+
+### **previousAgents**
+Ordered list of agents tried.
+
+### **routeType**
+- DIRECT (first selection)
+- FALLBACK (subsequent selections)
+
+### **retryCount**
+Incremented for each fallback attempt.
+
+---
+
+# 8. Error Rules
+
+### Error Categories:
+
+#### **INTERNAL_AGENT_ERROR**
+- thrown by agent
+- caught by router
+
+#### **ROUTING_ERROR**
+- no agents found
+- no fallback available
+- agent not registered
+
+Router MUST wrap errors in `ErrorInfo`.
+
+---
+
+# 9. Tracing Rules
+
+Each agent execution MUST generate a `TraceSpan`:
+
+```
+traceId
+spanId
+agent
+intent
+startTime
+endTime
+latencyMs
+status
+error
+```
+
+Fallback attempts MUST produce multiple spans.
+
+---
+
+# 10. Broadcast Routing (Reserved)
+
+Broadcast mode is part of the schema but **NOT implemented** in v1.0.
+
+Rules (when implemented):
+
+- send intent to all matching agents  
+- collect responses  
+- allow aggregation strategies  
+
+---
+
+# 11. Multi-Agent Routing (Future)
+
+Planned expansions include:
+
+- scoring-based routing  
+- weighted round-robin routing  
+- health-aware routing  
+- zero-downtime rolling update routing  
+
+---
+
+# 12. Complete Routing State Machine
+
+```
+START
+  ↓
+CHECK TARGET OVERRIDE
+  ↓
+DISCOVER CANDIDATES
+  ↓ (0 candidates)
+ERROR: NO AGENT FOUND
+  ↓
+SELECT PRIMARY
+  ↓
+LOAD FALLBACK ORDER
+  ↓
+EXECUTE AGENT
+  ↓ (success)
+RETURN RESPONSE
+  ↓
+FAILURE?
+  ↓ yes
+POP NEXT FALLBACK
+  ↓ (fallback exists)
+SWITCH TO FALLBACK AGENT
+  ↓
+EXECUTE AGAIN
+  ↓
+REPEAT or ERROR OUT
+```
+
+---
+
+# 13. Example Routing Decision (Demo)
+
+Primary storage:
+
+```
+fallbackAgents: ["secondaryStorage"]
+```
+
+Primary fails → router switches to secondary.
+
+Trace:
+
+```
+primaryStorage (failed)
+secondaryStorage (success)
+```
+
+---
+
+# 14. Status
+
+This routing logic is **fully implemented in IntentusNet v1.0** and corresponds to:
+
+- `router.py`
+- `models.py`
+- `registry.py`
+- demo agents
+
+The fallback system is validated via orchestrator demo.
