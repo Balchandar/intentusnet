@@ -223,3 +223,7 @@ This tracing model provides the foundation needed for:
 - Security auditing  
 
 It is lightweight today and fully extendable for enterprise-scale distributed tracing in future versions.
+
+Implementation Status:
+- Core Features: Implemented
+- Extended Features: Roadmap (not yet available)
