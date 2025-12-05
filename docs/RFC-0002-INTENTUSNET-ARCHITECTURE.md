@@ -310,23 +310,6 @@ EMCL mitigates many of these.
 
 ---
 
-# 15. Comparison to MCP
-
-IntentusNet is not MCP, but it is **MCP-compatible by design**:
-
-| Feature | IntentusNet | MCP |
-|--------|-------------|------|
-| Multi-agent orchestration | ✓ | ✗ |
-| Fallback routing | ✓ | ✗ |
-| Distributed agent mesh | ✓ | ✗ |
-| EMCL encryption | ✓ | ✗ |
-| Tool-based invocation | Planned | ✓ |
-| Execution graphs | Planned | ✗ |
-
-They complement each other; IntentusNet is orchestration-first.
-
----
-
 # 16. Revisions
 
 | Version | Date | Notes |
