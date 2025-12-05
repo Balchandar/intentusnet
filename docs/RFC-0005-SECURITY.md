@@ -245,3 +245,6 @@ IntentusNet provides a **practical, layered, optional security model** that adap
 
 Security is **never forced**, but always available.
 
+Implementation Status:
+- Core Features: Implemented
+- Extended Features: Roadmap (not yet available)
