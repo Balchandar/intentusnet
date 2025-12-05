@@ -229,14 +229,4 @@ Registry must enforce:
 - Distributed registry synchronization  
 - Hot-reloadable agent definitions  
 
----
-
-# 16. Status
-
-This RFC is **APPROVED** for IntentusNet v1.0 and matches the implementation in:
-
-- models.py  
-- router.py  
-- registry.py  
-- demo agents  
 
