@@ -249,3 +249,7 @@ The Transport Layer defines the **communication backbone** of IntentusNet:
 - Production-scale capable
 
 This RFC lays the foundation for distributed agent topologies and future cross-language SDKs.
+
+Implementation Status:
+- Core Features: Implemented
+- Extended Features: Roadmap (not yet available)
