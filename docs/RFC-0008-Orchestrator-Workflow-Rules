@@ -281,3 +281,7 @@ The orchestrator elevates IntentusNet from a routing system to a **true multi-ag
 
 This RFC defines the execution foundation for enterprise automation workflows powered by distributed AI agents.
 
+Implementation Status:
+- Core Features: Implemented
+- Extended Features: Roadmap (not yet available)
+
