@@ -125,3 +125,7 @@ Capability drives:
 
 # 7. Conclusion
 The Capability Schema defines IntentusNet’s declarative model for agent abilities, routing, and fallback behavior.
+
+Implementation Status:
+- Core Features: Implemented
+- Extended Features: Roadmap (not yet available)
