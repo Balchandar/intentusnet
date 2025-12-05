@@ -1,50 +1,242 @@
-# RFC-0003: Agent Registry Schema
-
-## Status
-Draft
-
-## Abstract
-This RFC defines the **Agent Registry schema** used in IntentusNet.  
-The registry standardizes how agents are described, discovered, and trusted within the ecosystem.  
-It provides a common format for agent metadata, capabilities, routing preferences, and trust signals.
+# RFC-0003 — Agent Registry Schema
+### IntentusNet Specification Document  
+**Status:** Draft  
+**Version:** 1.0  
+**Author:** Balachandar  
+**Last Updated:** 2025-12-05  
 
 ---
 
-## Schema Overview
+# 1. Purpose
 
-Each **Agent** is represented as a JSON document stored in a registry (local or distributed).  
-The schema covers identification, metadata, routing parameters, and security fields.
+The **Agent Registry** is the authoritative store of all agent definitions known to an IntentusNet runtime instance.  
+
+It ensures:
+
+- Standardized structure for agents  
+- Capability-based routing  
+- Registry-level fallback support  
+- Versioned intent matching  
+- Agent discovery  
+- Agent health evaluation  
+- Identity + endpoint metadata for distributed deployments  
+
+This RFC formalizes the schema and the validation requirements.
 
 ---
 
-## JSON Schema
+# 2. Agent Registry Responsibilities
 
-```json
-{
-  "id": "string (UUID or EMCL-ID)",
-  "name": "string",
-  "version": "string",
-  "description": "string",
-  "capabilities": [
-    {
-      "intent_type": "string",
-      "description": "string",
-      "qualifiers": ["string"]
-    }
-  ],
-  "routing": {
-    "priority": "integer (1 = highest)",
-    "fallback": "boolean",
-    "availability": "enum[online, degraded, offline]"
-  },
-  "trust": {
-    "score": "number (0.0 - 1.0)",
-    "last_verified": "ISO8601 datetime",
-    "signed_by": "string (authority id)"
-  },
-  "meta": {
-    "tags": ["string"],
-    "owner": "string",
-    "contact": "string (email or URL)"
-  }
-}
+The registry MUST:
+
+✔ Store all agent definitions  
+✔ Support find_agents_for_intent(intentRef)  
+✔ Provide fallback chains automatically  
+✔ Support agent lookup by name  
+✔ Validate capabilities  
+✔ Integrate with the router decision process  
+✔ Maintain consistent identity & metadata  
+
+The registry MUST NOT:
+
+❌ perform routing logic  
+❌ execute agent code  
+❌ mutate agent state at runtime  
+
+---
+
+# 3. AgentDefinition Schema
+
+```
+AgentDefinition:
+  name: string
+  version: string
+  identity: AgentIdentity
+  capabilities: Capability[]
+  endpoint: AgentEndpoint
+  health: AgentHealth
+  runtime: AgentRuntimeInfo
+```
+
+Constraints:
+
+- name MUST be unique per runtime instance  
+- capabilities MUST contain at least one entry  
+- endpoint.type MUST match the transport adapter  
+
+---
+
+# 4. Capability Schema (Updated for Fallback Routing)
+
+```
+Capability:
+  intent: IntentRef
+  inputSchema: object
+  outputSchema: object
+  examples: object[]
+  fallbackAgents: string[]   # NEW
+  priority: number           # optional
+```
+
+Key Behavior:
+
+- fallbackAgents MUST be evaluated by the router if and only if env.routing.fallbackAgents is empty.  
+- Order defines the failover sequence.  
+- Router MUST match by (intent.name, intent.version).  
+
+---
+
+# 5. IntentRef Schema
+
+```
+IntentRef:
+  name: string
+  version: string = "1.0"
+```
+
+Matching rules:
+
+intentA.name == intentB.name  
+AND  
+intentA.version == intentB.version  
+
+---
+
+# 6. AgentIdentity Schema
+
+```
+AgentIdentity:
+  agentId: string
+  roles: string[]
+  signingKeyId: string|null
+```
+
+---
+
+# 7. AgentEndpoint Schema
+
+```
+AgentEndpoint:
+  type: string
+  address: string
+```
+
+Supported types: local, http, zeromq, grpc, websocket, mcp.
+
+---
+
+# 8. AgentHealth Schema
+
+```
+AgentHealth:
+  status: string
+  lastHeartbeat: string
+```
+
+Router SHOULD prefer healthy agents.  
+
+---
+
+# 9. AgentRuntimeInfo Schema
+
+```
+AgentRuntimeInfo:
+  language: string
+  environment: string
+  scaling: string
+```
+
+---
+
+# 10. Registry Interface
+
+```
+register(agentDefinition)
+deregister(agentName)
+get_agent(name)
+find_agents_for_intent(intentRef)
+all_agents()
+```
+
+Validation:
+
+- Unique agent names  
+- Valid IntentRef  
+- fallbackAgents reference existing agents  
+- No circular fallback  
+- Schemas must be valid structures  
+
+---
+
+# 11. Fallback Resolution Logic
+
+Precedence:
+
+1. Envelope-level fallback  
+2. Registry fallback (capability.fallbackAgents)  
+3. No fallback → error  
+
+Router behavior:
+
+- On primary failure, pop next fallback agent  
+- Continue until success or exhaustion  
+
+---
+
+# 12. Example: Primary → Secondary Storage
+
+Primary:
+
+```
+capability.fallbackAgents: ["secondaryStorage"]
+```
+
+Secondary:
+
+```
+fallbackAgents: []
+```
+
+---
+
+# 13. Validation Rules
+
+Registry must enforce:
+
+- Unique agent names  
+- Valid capability declaration  
+- Valid fallback references  
+- No cyclic fallback chains  
+- IntentRef matching rules  
+- At least one capability per agent  
+
+---
+
+# 14. Router + Registry Interaction
+
+1. Registry provides matching agents via capability  
+2. Router selects primary  
+3. Router extracts fallbackAgents from capability  
+4. If agent fails, fallback triggers  
+5. Execution continues until success or last fallback fails  
+
+---
+
+# 15. Future Extensions
+
+- Weighted routing  
+- Health-score routing priority  
+- Distributed registry synchronization  
+- Hot-reloadable agent definitions  
+
+---
+
+# 16. Status
+
+This RFC is **APPROVED** for IntentusNet v1.0 and matches the implementation in:
+
+- models.py  
+- router.py  
+- registry.py  
+- demo agents  
+
