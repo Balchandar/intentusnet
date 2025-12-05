@@ -315,3 +315,7 @@ EMCL mitigates many of these.
 | Version | Date | Notes |
 |---------|---------|--------|
 | Draft-1 | 2025-12-05 | Initial architecture RFC |
+
+Implementation Status:
+- Core Features: Implemented
+- Extended Features: Roadmap (not yet available)
