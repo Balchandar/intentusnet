@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://intentusnet.com/schema/agent_response.json",
+  "title": "AgentResponse",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["version", "status", "metadata"],
+  "properties": {
+    "version": {
+      "type": "string",
+      "const": "1.0",
+      "description": "Protocol version for responses."
+    },
+    "status": {
+      "type": "string",
+      "description": "Outcome of agent processing.",
+      "enum": ["success", "error"]
+    },
+    "payload": {
+      "type": ["object", "null"],
+      "description": "Response payload when status=success.",
+      "additionalProperties": true
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["agent", "timestamp"],
+      "properties": {
+        "agent": {
+          "type": "string",
+          "description": "Name of the agent that produced this response."
+        },
+        "timestamp": {
+          "type": "string",
+          "description": "ISO-8601 timestamp when the response was emitted."
+        },
+        "traceId": {
+          "type": "string",
+          "description": "Trace ID (optional) for correlating with the request."
+        }
+      }
+    },
+    "error": {
+      "type": ["object", "null"],
+      "additionalProperties": true,
+      "description": "Error details when status=error.",
+      "properties": {
+        "code": {
+          "type": "string",
+          "description": "Standard error code.",
+          "enum": [
+            "ROUTING_ERROR",
+            "CAPABILITY_NOT_FOUND",
+            "AGENT_TIMEOUT",
+            "AGENT_UNAVAILABLE",
+            "PROTOCOL_ERROR",
+            "TRANSPORT_ERROR",
+            "UNAUTHORIZED",
+            "RATE_LIMIT",
+            "INTERNAL_AGENT_ERROR",
+            "PAYLOAD_TOO_LARGE",
+            "WORKFLOW_ABORTED",
+            "EMCL_FAILURE"
+          ]
+        },
+        "message": {
+          "type": "string",
+          "description": "Human-readable error message."
+        },
+        "retryable": {
+          "type": "boolean",
+          "description": "Whether the caller may safely retry."
+        },
+        "details": {
+          "type": "object",
+          "description": "Arbitrary error metadata.",
+          "additionalProperties": true
+        }
+      }
+    }
+  }
+}

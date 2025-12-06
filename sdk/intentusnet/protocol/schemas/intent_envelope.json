@@ -1,0 +1,142 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://intentusnet.com/schema/intent_envelope.json",
+  "title": "IntentEnvelope",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["version", "intent", "payload", "context", "metadata"],
+  "properties": {
+    "version": {
+      "type": "string",
+      "const": "1.0",
+      "description": "Protocol version for the intent envelope."
+    },
+    "intent": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["name", "version"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Name of the intent (e.g. summarizeDocument)."
+        },
+        "version": {
+          "type": "string",
+          "description": "Version of the intent (e.g. 1.0)."
+        }
+      }
+    },
+    "payload": {
+      "type": "object",
+      "description": "Intent payload; structure depends on intent definition.",
+      "additionalProperties": true
+    },
+    "context": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["sessionId", "workflowId"],
+      "properties": {
+        "sessionId": {
+          "type": "string",
+          "description": "Logical session identifier."
+        },
+        "workflowId": {
+          "type": "string",
+          "description": "Workflow or saga identifier."
+        },
+        "memory": {
+          "type": "object",
+          "description": "Shared memory map for the workflow.",
+          "additionalProperties": true
+        },
+        "history": {
+          "type": "array",
+          "description": "History of previous steps (shape is intentionally flexible).",
+          "items": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        }
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["timestamp", "priority", "traceId", "correlationId"],
+      "properties": {
+        "sourceAgent": {
+          "type": ["string", "null"],
+          "description": "Name of the agent that emitted this intent, if any."
+        },
+        "timestamp": {
+          "type": "string",
+          "description": "ISO-8601 timestamp when the intent was created."
+        },
+        "priority": {
+          "type": "string",
+          "description": "Priority of the intent.",
+          "enum": ["low", "normal", "high"]
+        },
+        "traceId": {
+          "type": "string",
+          "description": "Correlation trace ID across the workflow."
+        },
+        "correlationId": {
+          "type": "string",
+          "description": "Correlation ID for the request/response pair."
+        },
+        "tags": {
+          "type": "array",
+          "description": "Free-form tags for routing/observability.",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "routing": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "targetAgent": {
+          "type": ["string", "null"],
+          "description": "Specific agent to route to, if pinned."
+        },
+        "broadcast": {
+          "type": "boolean",
+          "description": "If true, intent may be broadcast to multiple agents."
+        },
+        "fallbackAgents": {
+          "type": "array",
+          "description": "Ordered list of fallback agents for this intent.",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "routingMetadata": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "routeType": {
+          "type": "string",
+          "description": "Routing strategy used.",
+          "enum": ["direct", "fallback", "broadcast", "parallel"]
+        },
+        "previousAgents": {
+          "type": "array",
+          "description": "Agents that already processed this intent.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "retryCount": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of routing/agent retries attempted."
+        }
+      }
+    }
+  }
+}

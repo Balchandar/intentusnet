@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://intentusnet.com/schema/transport_envelope.json",
+  "title": "TransportEnvelope",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "protocol",
+    "protocolNegotiation",
+    "messageType",
+    "headers",
+    "body"
+  ],
+  "properties": {
+    "protocol": {
+      "type": "string",
+      "const": "INTENTUSNET/1.0",
+      "description": "Protocol identifier and version."
+    },
+    "protocolNegotiation": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["minVersion", "maxVersion"],
+      "properties": {
+        "minVersion": {
+          "type": "string",
+          "description": "Minimum supported protocol version."
+        },
+        "maxVersion": {
+          "type": "string",
+          "description": "Maximum supported protocol version."
+        }
+      }
+    },
+    "messageType": {
+      "type": "string",
+      "description": "Type of the inner message.",
+      "enum": ["intent", "response", "event"]
+    },
+    "headers": {
+      "type": "object",
+      "description": "Transport headers (traceId, correlationId, auth, etc.).",
+      "additionalProperties": true
+    },
+    "body": {
+      "type": "object",
+      "description": "Inner protocol message (IntentEnvelope, AgentResponse, LifecycleEvent).",
+      "additionalProperties": true
+    }
+  }
+}

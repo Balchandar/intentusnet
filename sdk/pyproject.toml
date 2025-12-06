@@ -1,0 +1,81 @@
+[build-system]
+requires = ["setuptools>=67.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "intentusnet"
+version = "0.1.0"
+description = "IntentusNet — Open-Source, Language-Agnostic AI Agent Runtime & Orchestration Framework."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+
+authors = [
+    { name = "Balachandar Manikandan", email = "your-email@example.com" }
+]
+
+keywords = [
+    "AI", "Agent Runtime", "Orchestration", "Protocol",
+    "Intent Routing", "EMCL", "Encrypted Agent Communication"
+]
+
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+
+# Core runtime + protocol + utilities
+
+dependencies = [
+    "jsonschema>=4.21.1",
+    "cryptography>=42.0.0",
+    "requests>=2.32.3",
+    "websockets>=12.0",
+    "pyzmq>=25.1.2",
+    "python-dateutil>=2.9.0",
+    "urllib3>=2.2.3",
+]
+
+# Optional extras (developers can install via: pip install intentusnet[emcl])
+
+[project.optional-dependencies]
+emcl = [
+    "cryptography>=42.0.0",
+]
+
+zeromq = [
+    "pyzmq>=25.1.2",
+]
+
+websocket = [
+    "websockets>=12.0",
+]
+
+dev = [
+    "pytest>=8.2.0",
+]
+
+# CLI entry points (Optional — can remove)
+
+[project.scripts]
+intentusctl = "intentusnet.cli:main"
+
+# Package layout
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["intentusnet*"]
+
+# Include non-Python assets (schemas)
+[tool.setuptools.package-data]
+"intentusnet.examples" = ["**/*.py"]
+"intentusnet.protocol.schemas" = ["*.json"]
+
+# PyPI metadata URLs (optional but recommended)
+
+[project.urls]
+Homepage = "https://github.com/Balchandar/intentusnet"
+Documentation = "https://intentusnet.com"
+Source = "https://github.com/Balchandar/intentusnet"
+Issues = "https://github.com/Balchandar/intentusnet/issues"
