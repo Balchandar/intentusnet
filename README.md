@@ -1,163 +1,168 @@
 # 🚀 IntentusNet
-
 ### **Secure Runtime for Intent Routing and Multi-Agent Execution**
 
 Deterministic • Transport-Agnostic • EMCL-Ready • MCP-Compatible
 
-IntentusNet is an open-source, language-agnostic **AI agent execution runtime** for secure, fallback-capable, and distributed orchestration.
+IntentusNet is an open-source, language-agnostic **AI agent execution runtime** for secure, fallback-capable, distributed orchestration.
 
-It enables structured intent routing across agents, tools, or microservices — with built-in EMCL envelope encryption, traceability, and support for HTTP, ZeroMQ, WebSocket, and in-process transports.
+It enables structured **intent routing** across agents, tools, or microservices — with EMCL encrypted envelopes, full traceability, and pluggable transports such as HTTP, ZeroMQ, WebSocket, and in-process.
 
-⚠️ **Note:** The Python & C# SDKs will be released in the *next version*.
-This release focuses on the **core runtime, routing engine, EMCL layer, and transport infrastructure**.
-
----
-
-## ✨ Key Features
-
-### 🧠 Secure AI Agent Runtime
-
-* Language-agnostic agent communication model
-* IntentEnvelope abstraction for message-level clarity
-* Agent registry + capabilities schema
-* Deterministic routing with fallback resolution
-* Contextual memory, trace IDs, correlation IDs
-* Identity-aware execution with optional EMCL envelope
-
-Agents can talk via:
-
-* HTTP / JSON
-* ZeroMQ
-* WebSocket
-* In-process
-* (Future) MCP / Custom Transports
-
-> SDKs coming soon will simplify agent definition and integration.
+> ⚠️ **Python SDK Notice:**  
+The **Python Runtime SDK** (router, agents, transports, EMCL, MCP adapter) is *included in this release*.  
+A higher-level ergonomic SDK (decorators, auto-registration, PyPI package) arrives in the next version.  
+C# SDK also arrives next version.
 
 ---
 
-### ⚡ Intent-Oriented Orchestration Engine
+# ✨ Key Features
 
-* Capability-based routing
-* Envelope-driven fallback chain logic
-* Parallel or sequential intent flows
-* Priority-based resolution
-* Full trace span logging + observability hooks
-* RouterDecision audit metadata
+## 🧠 Secure AI Agent Runtime
 
-This is the **core intelligence layer** enabling deterministic multi-agent workflows.
+- Language-agnostic agent model
+- `IntentEnvelope` abstraction for clarity
+- Agent registry + capability schema
+- Deterministic routing with fallback support
+- Contextual memory + traceId + correlationId
+- Identity-aware agent execution
+- EMCL envelope encryption (optional)
 
----
+Supported Transports:
 
-### 🔐 EMCL Secure Envelope (Optional)
-
-* AES-GCM encryption
-* HMAC-SHA256 signing (demo mode)
-* Identity chain propagation
-* Nonce, timestamp, and anti-replay guards
-
-EMCL adds message-layer integrity for zero-trust or compliance-grade scenarios.
-Can be toggled on or off per transport instance.
+- HTTP / JSON
+- ZeroMQ
+- WebSocket
+- In-process
+- *(Future)* MCP-native transport
 
 ---
 
-### 🔗 MCP-Compatible Architecture
+## ⚡ Intent-Oriented Orchestration Engine
 
-Designed for:
-
-* Supporting MCP-compliant tool calls
-* Wrapping agents as MCP tools
-* Accepting or emitting EMCL-secured MCP calls
-
-The runtime already aligns with MCP’s intent + args + result format.
-MCP adapter arrives in the **next version**.
+- Capability-driven routing  
+- Envelope-defined fallback chain  
+- Sequential or parallel intent flows  
+- Priority-based routing  
+- Trace spans with metadata  
+- `RouterDecision` for auditing workflows  
 
 ---
 
-## 🌐 Language-Agnostic Design
+## 🔐 EMCL Secure Envelope (Optional)
 
-Works with any language:
-
-* Agents can run in **Python**, **C#**, **Go**, **Rust**, etc.
-* Communication via standard HTTP/JSON, ZeroMQ, or WebSocket
-* Transport-agnostic and stateless by design
-
----
-
-## 📦 SDK Status
-
-### 📌 Coming Soon
-
-* Python SDK
-* C# SDK
-
-Will provide:
-
-* Type-safe agent stubs
-* Auto-registration & decorators
-* EMCL helpers + config injection
-* Request/response schema support
-
-### 📌 Current
-
-* Core runtime + manual registration
-* ZeroMQ / HTTP transports
-* EMCL envelope processing
-* Router + fallback engine
-* Trace sink (in-memory)
+- AES-GCM authenticated encryption  
+- HMAC-SHA256 signing (demo provider)  
+- Identity-chain propagation  
+- Nonce/timestamp/anti-replay logic  
 
 ---
 
-## 🧰 Architecture Snapshot
+## 🔗 MCP-Compatible Architecture
+
+The architecture aligns with MCP:
+
+- Agents can be wrapped as MCP tools  
+- Accept MCP tool requests  
+- Emit MCP-style responses  
+- Optional EMCL-secured MCP envelopes  
+
+The **MCP Adapter** is included in the runtime.
+
+---
+
+# 🌐 Language-Agnostic Design
+
+Agents can be written in:
+
+- Python  
+- C#  
+- Go  
+- Rust  
+- Any language speaking HTTP/ZeroMQ/WebSocket  
+
+---
+
+# 📦 SDK Status
+
+## ✔️ Included in This Release — Python Runtime SDK
+
+- Agent base class  
+- Router + fallback engine  
+- AgentRegistry  
+- Transports: ZeroMQ, HTTP, WebSocket, In-process  
+- EMCL providers (AES-GCM, HMAC)  
+- MCP Adapter  
+- Protocol models & validators  
+- Trace sink  
+- Example agents & demos  
+
+---
+
+## 📌 Coming Next Version
+
+### Python Ergonomic SDK
+- `@agent` decorators  
+- Auto-capability registration  
+- Schema validation helpers  
+- PyPI packaging  
+- Workflow utilities  
+
+### C# SDK
+- Routing client  
+- Agent interfaces  
+- EMCL provider  
+- Transports  
+
+---
+
+# 🧰 Architecture Snapshot
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                 Client / Application          │
-└───────────────────────────────────────────────────┘
-                        │
-            Intent Router & Orchestrator (L5)
-                        │
-                  Agent Execution Layer (L4)
-                        │
-           EMCL Secure Envelope (Optional, L3)
-                        │
-┌────────────────────────────────────────────────┐
-│   MCP        │   ZeroMQ     │   HTTP       │  WebSocket  │
-└────────────────────────────────────────────────┘
-        Backend Tools / Agents (Any Language)
+┌──────────────────────────────────────────────────────────────┐
+│                   Client / Application                       │
+└──────────────────────────────────────────────────────────────┘
+                               │
+                    Intent Router & Orchestrator
+                               │
+                       Agent Execution Layer
+                               │
+                  EMCL Secure Envelope (Optional)
+                               │
+┌──────────────────────────────────────────────────────────────┐
+│ MCP Tools │ ZeroMQ │ HTTP │ WebSocket │ In-Process            │
+└──────────────────────────────────────────────────────────────┘
+                 Backend Agents / Services (Any Language)
 ```
 
 ---
 
-## 📦 Capabilities Summary
+# 📦 Capabilities Summary
 
-### ✅ Included
+## Included
+- Intent router + fallback  
+- Capability matching  
+- Multi-transport execution  
+- EMCL encryption  
+- Trace spans  
+- Agent identity + correlation IDs  
+- MCP-compatible core  
+- Python runtime SDK  
 
-* IntentRouter with fallback support
-* Trace spans with metadata
-* Multi-transport execution (inproc / HTTP / ZeroMQ)
-* Optional EMCL envelope layer
-* AgentRegistry with capability matching
-* Agent identity + traceId/correlationId support
-* MCP architecture-ready core
-
-### ❌ Planned
-
-* Python SDK  → Next
-* C# SDK      → Next
-* MCP Adapter → Next
-* EMCL key rotation & vault → Future
+## Planned
+- Python ergonomic SDK  
+- C# SDK  
+- Full MCP Adapter (inbound + outbound)  
+- EMCL key vault + rotation  
 
 ---
 
-## 🛠 Installation
+# 🛠 Installation
 
 ```bash
 git clone https://github.com/<your-repo>/intentusnet
 cd intentusnet
 ```
 
-Run a demo:
+Demo:
 
 ```bash
 intentusctl run-demo orchestrator
@@ -165,40 +170,33 @@ intentusctl run-demo orchestrator
 
 ---
 
-## 🗺 Roadmap
+# 🗺 Roadmap
 
-### 🔜 Next
+### Next Release
+- Python ergonomic SDK  
+- C# SDK  
+- MCP Adapter  
+- EMCL key rotation  
 
-* Python & C# SDKs
-* Full MCP adapter (inbound & outbound)
-* EMCL key vault, key rotation
-
-### 🌟 Future
-
-* Multi-agent planner engine
-* Vector memory backend
-* Multi-model federation
-* Agent-level trust scoring
-* Distributed orchestration runtime
+### Future
+- Multi-agent planner  
+- Vector memory backend  
+- Trust-scored routing  
+- Distributed orchestrator  
 
 ---
 
-## 👤 Author
-
+# 👤 Author
 **Balachandar Manikandan**
 
 ---
 
-## 📍 License
-
-MIT License — open source & commercial use allowed.
+# 📍 License
+MIT License — Open source & commercial friendly.
 
 ---
 
-## 🔐 Keywords
-
-AI Runtime, Multi-Agent, Intent Routing, Secure Orchestration,
-EMCL Envelope, Agent Framework, Traceable AI, Fallback Routing,
-ZeroMQ Agent Transport, MCP Protocol, Open AI Orchestration,
-Compliance-Aware Agents, Pluggable Routing, Envelope Signing,
-Encrypted Agent RPC, Transport-Agnostic Runtime.
+# 🔐 Keywords
+AI Runtime, Multi-Agent Orchestration, Intent Routing Framework,  
+EMCL Encryption, ZeroMQ Transport, MCP-Compatible Tools,  
+Workflow Engine, Secure Agent Communication.
