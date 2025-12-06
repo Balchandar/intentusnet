@@ -7,277 +7,162 @@ Draft — v1.0
 This RFC formally defines the **Orchestrator Layer (L5)** of IntentusNet.  
 While the Router (L4) handles agent selection and fallback, the **Orchestrator** coordinates *multi-step, multi-agent workflows* including:
 
-- Sequential execution  
-- Parallel execution  
-- Branching logic  
-- Decision-making  
-- Aggregation of results  
-- Error recovery workflows  
-- Human-in-the-loop (future)  
+# 🧠 IntentusNet Workflows  
+*(How workflows work today, and the future roadmap)*
 
-This layer transforms IntentusNet from simple routing into a *true multi-agent workflow engine*.
+IntentusNet already supports **automatic multi-step workflows** using agent-to-agent chaining.  
+This workflow model is enabled by:
 
----
+- Agents emitting new intents during execution  
+- A re-entrant Router capable of handling chained calls  
+- Shared `workflowId`, `sessionId`, and `context.memory`  
+- Built-in fallback and tracing  
 
-# 1. Goals
-
-The orchestrator must:
-
-- Model workflows declaratively or programmatically  
-- Support arbitrary multi-step pipelines  
-- Enable agents to call other agents (agent → agent)  
-- Support retries & fallback at workflow level  
-- Maintain workflow state & memory  
-- Expose a predictable execution model for SDKs  
-- Remain language-agnostic  
+This allows you to build **complex, multi-step pipelines** without a dedicated workflow engine.
 
 ---
 
-# 2. Orchestrator Definition Model
+## ✅ How Workflows Work Today (SDK v1)
 
-An Orchestrator Agent is a special agent with the capability:
+### ✔ Agent-Driven Workflow Chaining
 
-```
-intent: runWorkflow
-```
+Any agent can continue a workflow by calling:
 
-But in practice, orchestrators can define *multiple workflows*.
-
-### 2.1 Workflow Definition Schema
-
-```json
-{
-  "workflowId": "string",
-  "steps": [
-    {
-      "id": "step1",
-      "type": "task|parallel|branch|wait",
-      "intent": "optional",
-      "agent": "optional",
-      "input": { },
-      "next": ["step2"]
-    }
-  ],
-  "onError": "fail|continue|retry|fallback",
-  "maxRetries": 1
-}
+```python
+return self.emit_intent("next.intent", payload)
 ```
 
-### 2.2 Execution Types
+This immediately sends a new `IntentEnvelope` back into the router:
 
-| Type        | Behavior |
-|-------------|----------|
-| `task`      | Runs a single agent synchronously |
-| `parallel`  | Runs multiple intents concurrently |
-| `branch`    | Chooses next step based on rule |
-| `wait`      | Pause or wait for external signal |
+```
+emit_intent()
+  → router.route_intent()
+      → next agent executes
+```
+
+This creates **sequential, multi-step workflows** automatically.
 
 ---
 
-# 3. Runtime Behavior of Orchestrator
+### ✔ Shared Workflow Context
 
-Workflow execution is stateful:
+All chained steps share:
 
-```
-context.memory
-context.history
-context.sessionId
-context.workflowId
-```
+- `workflowId`
+- `sessionId`
+- `context.memory`
+- `context.history`
 
-### Execution Flow:
-1. Orchestrator receives `processDocument` (or any workflow intent)  
-2. Loads workflow spec  
-3. Executes steps in order  
-4. Each step invokes router → agent  
-5. Aggregates results  
-6. Returns final response to client  
-
-The orchestrator MUST leverage:
-
-- router for routing  
-- fallback logic  
-- trace system  
-- EMCL envelope when enabled  
+This provides continuity from the first step to the last.
 
 ---
 
-# 4. Agent-to-Agent Calls (A2A)
+### ✔ Automatic Fallback Across Steps
 
-Agents may call other agents through the router:
-
-```
-self.call_agent("summarizer", intent="summarizeDocument")
-```
-
-Orchestrator supports:
-
-- synchronous chaining  
-- parallel fan-out  
-- cascading fallback  
-- grouped results  
-
-Example:
+If an agent fails:
 
 ```
-summary = call("summarizer")
-labels = call("classifier")
-storage = call("primaryStorage") or fallback("secondaryStorage")
+primary_agent → FAIL
+fallback_agent → RUN
 ```
+
+The router handles fallback seamlessly across chained workflow steps.
 
 ---
 
-# 5. Error Handling Model
+### ✔ Full Tracing for Every Workflow Hop
 
-### 5.1 Step-Level Failures
-Each step can define:
+Each step generates a `TraceSpan` containing:
 
-- `retry`
-- `fallback`
-- `skip`
-- `fail`
+- agent name  
+- intent name  
+- start/end timestamps  
+- latency  
+- success/error information  
 
-### 5.2 Workflow-Level Failure Modes
-
-| Mode       | Description |
-|------------|-------------|
-| `fail`     | Entire workflow stops |
-| `retry`    | Retry entire workflow |
-| `continue` | Skip failed steps |
-| `fallback` | Use alternative workflow |
+This creates a complete workflow timeline.
 
 ---
 
-# 6. Parallel Workflow Semantics
+## 🔍 Example: Multi-Agent Workflow Using Current SDK
 
-A `parallel` step must:
+```python
+class ClassifierAgent(BaseAgent):
+    def handle_intent(self, env):
+        label = classify(env.payload["text"])
+        return self.emit_intent("summarize.doc", {
+            "label": label,
+            "text": env.payload["text"]
+        })
 
-- Dispatch N intents simultaneously  
-- Await all results  
-- Mark individual statuses  
-- Fail or continue based on `onError` behavior  
+class SummarizerAgent(BaseAgent):
+    def handle_intent(self, env):
+        summary = summarize(env.payload["text"])
+        return self.emit_intent("store.doc", {
+            "summary": summary
+        })
 
-Example:
-
-```json
-{
-  "id": "analyze",
-  "type": "parallel",
-  "tasks": [
-    { "intent": "summarizeDocument" },
-    { "intent": "classifyDocument" }
-  ]
-}
+class StorageAgent(BaseAgent):
+    def handle_intent(self, env):
+        save_to_db(env.payload)
+        return AgentResponse(
+            version="1.0",
+            status="success",
+            payload={"stored": True},
+            metadata={"agent": self.definition.name},
+        )
 ```
+
+**This is a real multi-step workflow**—no extra workflow engine required.
 
 ---
 
-# 7. Branching Rules
+## 📌 Summary of Current Workflow Capabilities (v1)
 
-A `branch` step chooses next step based on:
-
-- agent output  
-- context.memory  
-- payload fields  
-
-Example:
-
-```
-if labels include "urgent":
-    next = escalated-storage
-else:
-    next = normal-storage
-```
+| Feature | Supported? | Notes |
+|--------|------------|-------|
+| Agent → Agent chaining | ✅ Yes | via `emit_intent()` |
+| Multi-step workflows | ✅ Yes | implicit + automatic |
+| Fallback routing across steps | ✅ Yes | handled by router |
+| Shared workflow context | ✅ Yes | `workflowId`, memory |
+| Per-step tracing | ✅ Yes | spans recorded |
+| Declarative workflow definitions | ❌ No | future |
+| Parallel execution | ❌ No | future |
+| Branching logic | ❌ No | future |
+| Wait/pause/long workflows | ❌ No | future |
 
 ---
 
-# 8. Final Response Assembly
+# 🚀 Future Roadmap — Orchestrator Layer (L5)
 
-After workflow runs:
+*(These features are **planned**, not implemented in SDK v1.)*
 
-- Every step output is available in `context.memory`  
-- Final orchestrator output = structured JSON combining selected results  
-- Must include traceId  
-- Must NOT include sensitive EMCL payloads  
+The future orchestrator layer will add:
 
----
+- Declarative workflow definitions (JSON/YAML)
+- Parallel step execution
+- Branching rules based on agent output
+- Step-level policies (retry, skip, fallback)
+- Long-running workflows with pause/resume
+- Human-in-the-loop approval gates
+- Visual workflow designer
 
-# 9. Example: Full Multi-Agent Workflow
-
-```
-Input → Orchestrator
- → summarizeDocument
- → classifyDocument
- → storeDocument (primary → fallback → secondary)
- → secureMetadata
- → notifyUser
-Output → client
-```
-
-Illustrated Timeline:
-
-```
-summarizer ────────┐
-classifier ───────┐│
-primary ----X──────││  (fallback triggered)
-secondary ─────────┘│
-secureStorage ──────┘
-notification ───────┘
-```
+These enhancements will sit **above** the current router, not replace it.
 
 ---
 
-# 10. Tracing Integration
+# 🧩 Why Workflows Already Work Today
 
-Each workflow step produces:
+IntentusNet v1 can already perform multi-step flows because:
 
-- Orchestrator span  
-- Child agent spans  
-- Optional router spans  
+- Agents emit new intents  
+- Router handles chained routing  
+- Context persists between steps  
+- Tracing ties the workflow together  
 
-Trace relationships:
-
-```
-Orchestrator Span
-  → Router Span
-     → Agent Span
-  → Router Span (fallback)
-     → Agent Span
-```
+This creates a natural workflow engine **without any extra components**.
 
 ---
-
-# 11. EMCL Workflow Semantics
-
-If EMCL is enabled:
-
-- All workflow payloads between orchestrator and agents MUST be encrypted  
-- Orchestrator MUST NOT log decrypted content  
-- Sensitive metadata must be masked in traces  
-
----
-
-# 12. Future Enhancements
-
-- Declarative YAML workflow definitions  
-- Visual workflow builder  
-- Graph-based execution engine  
-- Human-in-the-loop approval gates  
-- Long-running workflows with pause/resume  
-- SLAs and workflow-level QoS controls  
-- Planner engine for dynamic intent routing  
-
----
-
-# 13. Conclusion
-
-The orchestrator elevates IntentusNet from a routing system to a **true multi-agent workflow engine** with:
-
-- agent chaining  
-- decision logic  
-- parallel execution  
-- fallback  
-- secure multi-step processing  
 
 This RFC defines the execution foundation for enterprise automation workflows powered by distributed AI agents.
 
