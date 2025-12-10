@@ -1,10 +1,6 @@
 version: "3.9"
 
 services:
-
-  ##############################################################
-  # API SERVER — FastAPI + all advanced agents
-  ##############################################################
   intentusnet-api:
     container_name: intentusnet-api
     build:
@@ -15,22 +11,9 @@ services:
       - "8000:8000"
     environment:
       PYTHONUNBUFFERED: "1"
-    networks:
-      - intentusnet
-
-  ##############################################################
-  # WORKER — CLI demo (full advanced workflow)
-  ##############################################################
-  intentusnet-worker:
-    container_name: intentusnet-worker
-    build:
-      context: .
-      dockerfile: Dockerfile
-
-    command: sleep infinity
-
-    environment:
-      PYTHONUNBUFFERED: "1"
+      INTENTUSNET_EMCL_ENABLED: "true"
+      INTENTUSNET_EMCL_MODE: "aes-gcm"
+      INTENTUSNET_EMCL_KEY: "${INTENTUSNET_EMCL_KEY}"
     networks:
       - intentusnet
 
