@@ -1,0 +1,39 @@
+version: "3.9"
+
+services:
+
+  ##############################################################
+  # API SERVER — FastAPI + all advanced agents
+  ##############################################################
+  intentusnet-api:
+    container_name: intentusnet-api
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: uvicorn examples.advanced.web_server:app --host 0.0.0.0 --port 8000
+    ports:
+      - "8000:8000"
+    environment:
+      PYTHONUNBUFFERED: "1"
+    networks:
+      - intentusnet
+
+  ##############################################################
+  # WORKER — CLI demo (full advanced workflow)
+  ##############################################################
+  intentusnet-worker:
+    container_name: intentusnet-worker
+    build:
+      context: .
+      dockerfile: Dockerfile
+
+    command: sleep infinity
+
+    environment:
+      PYTHONUNBUFFERED: "1"
+    networks:
+      - intentusnet
+
+networks:
+  intentusnet:
+    driver: bridge
