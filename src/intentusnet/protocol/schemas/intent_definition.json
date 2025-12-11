@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "IntentDefinition",
+  "type": "object",
+  "required": ["intent", "inputSchema", "outputSchema"],
+  "additionalProperties": false,
+  "properties": {
+    "intent": {
+      "type": "object",
+      "required": ["name"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string" },
+        "version": { "type": "string", "default": "1.0" }
+      }
+    },
+    "inputSchema": { "type": "object" },
+    "outputSchema": { "type": "object" },
+    "examples": {
+      "type": "array",
+      "items": { "type": "object" },
+      "default": []
+    },
+    "fallbackAgents": {
+      "type": "array",
+      "items": { "type": "string" },
+      "default": []
+    },
+    "priority": { "type": "integer", "default": 0 }
+  }
+}

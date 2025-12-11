@@ -1,5 +1,5 @@
 from intentusnet.agents.base import BaseAgent
-from intentusnet.protocol.models import AgentDefinition, Capability, AgentResponse
+from intentusnet.protocol.models import AgentDefinition, Capability, AgentResponse, IntentRef
 
 
 class ScraperAgent(BaseAgent):
@@ -8,19 +8,14 @@ class ScraperAgent(BaseAgent):
         definition = AgentDefinition(
             name="scraper-agent",
             capabilities=[
-                Capability(
-                    name="scraper",
-                    intents=["ExtractIntent"],
-                    priority=1,
-                )
+               Capability(intent=IntentRef("ExtractIntent"),inputSchema={},outputSchema={})
             ],
         )
         super().__init__(definition, router)
 
     def handle(self, env):
-        results = env.payload.get("results", [])
-        if not results:
+        response = env.payload.get("results", [])
+        if not response:
             return AgentResponse.failure(self.error("No results to scrape"))
-
-        combined = "\n".join(r["title"] for r in results)
+        combined = "\n".join((r["title"] for r in response["results"]) if "results" in response else [])
         return AgentResponse.success({"content": combined})

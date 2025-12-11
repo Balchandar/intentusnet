@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "IntentEnvelope",
+  "type": "object",
+  "required": ["version", "intent", "payload", "context", "metadata"],
+  "additionalProperties": false,
+  "properties": {
+    "version": { "type": "string" },
+
+    "intent": {
+      "type": "object",
+      "required": ["name"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string" },
+        "version": { "type": "string", "default": "1.0" }
+      }
+    },
+
+    "payload": { "type": "object" },
+
+    "context": {
+      "type": "object",
+      "required": ["sessionId", "workflowId"],
+      "additionalProperties": false,
+      "properties": {
+        "sessionId": { "type": "string" },
+        "workflowId": { "type": "string" },
+        "memory": { "type": "object", "default": {} },
+        "history": {
+          "type": "array",
+          "items": { "type": "object" },
+          "default": []
+        }
+      }
+    },
+
+    "metadata": {
+      "type": "object",
+      "required": ["timestamp", "priority"],
+      "additionalProperties": false,
+      "properties": {
+        "sourceAgent": { "type": ["string", "null"] },
+        "timestamp": { "type": "string" },
+        "priority": {
+          "type": "string",
+          "enum": ["low", "normal", "high"]
+        },
+        "traceId": { "type": "string" },
+        "correlationId": { "type": "string" },
+        "tags": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": []
+        }
+      }
+    },
+
+    "routing": {
+      "type": "object",
+      "additionalProperties": false,
+      "default": {},
+      "properties": {
+        "targetAgent": { "type": ["string", "null"] },
+        "broadcast": { "type": "boolean", "default": false },
+        "fallbackAgents": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": []
+        }
+      }
+    },
+
+    "routingMetadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "default": {},
+      "properties": {
+        "routeType": {
+          "type": "string",
+          "enum": ["direct", "fallback", "broadcast", "parallel"],
+          "default": "direct"
+        },
+        "previousAgents": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": []
+        },
+        "retryCount": {
+          "type": "integer",
+          "default": 0
+        }
+      }
+    }
+  }
+}

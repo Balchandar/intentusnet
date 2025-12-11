@@ -1,5 +1,5 @@
 from intentusnet.agents.base import BaseAgent
-from intentusnet.protocol.models import AgentDefinition, Capability, AgentResponse
+from intentusnet.protocol.models import AgentDefinition, Capability, AgentResponse, IntentRef
 
 
 class SummarizerAgent(BaseAgent):
@@ -8,11 +8,12 @@ class SummarizerAgent(BaseAgent):
         definition = AgentDefinition(
             name="summarizer-agent",
             capabilities=[
-                Capability(
-                    name="summarizer",
-                    intents=["SummarizeIntent"],
-                    priority=1,
+               Capability(
+                    intent=IntentRef("SummarizeIntent"),
+                    inputSchema={},
+                    outputSchema={}
                 )
+
             ],
         )
         super().__init__(definition, router)

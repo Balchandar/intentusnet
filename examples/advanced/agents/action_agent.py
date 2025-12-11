@@ -1,5 +1,5 @@
 from intentusnet.agents.base import BaseAgent
-from intentusnet.protocol.models import AgentDefinition, Capability, AgentResponse
+from intentusnet.protocol.models import AgentDefinition, Capability, AgentResponse, IntentRef
 
 
 class ActionAgent(BaseAgent):
@@ -9,9 +9,9 @@ class ActionAgent(BaseAgent):
             name="action-agent",
             capabilities=[
                 Capability(
-                    name="action",
-                    intents=["ActionIntent"],
-                    priority=1,
+                    intent=IntentRef("ActionIntent"),
+                    inputSchema={},
+                    outputSchema={}
                 )
             ],
         )

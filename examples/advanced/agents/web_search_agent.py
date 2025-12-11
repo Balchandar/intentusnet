@@ -1,5 +1,5 @@
 from intentusnet.agents.base import BaseAgent
-from intentusnet.protocol.models import AgentDefinition, Capability, AgentResponse
+from intentusnet.protocol.models import AgentDefinition, Capability, IntentRef, AgentResponse
 
 
 class WebSearchAgent(BaseAgent):
@@ -9,9 +9,9 @@ class WebSearchAgent(BaseAgent):
             name="web-search-agent",
             capabilities=[
                 Capability(
-                    name="search",
-                    intents=["SearchIntent"],
-                    priority=1,  # primary
+                    intent=IntentRef(name="SearchIntent"),
+                    inputSchema={},
+                    outputSchema={}
                 )
             ],
         )

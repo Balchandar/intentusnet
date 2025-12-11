@@ -1,5 +1,5 @@
 from intentusnet.agents.base import BaseAgent
-from intentusnet.protocol.models import AgentDefinition, Capability, AgentResponse
+from intentusnet.protocol.models import AgentDefinition, Capability, AgentResponse, IntentRef
 
 
 class ResearchOrchestratorAgent(BaseAgent):
@@ -8,17 +8,14 @@ class ResearchOrchestratorAgent(BaseAgent):
         definition = AgentDefinition(
             name="research-orchestrator",
             capabilities=[
-                Capability(
-                    name="research-orchestrator",
-                    intents=["ResearchIntent"],
-                    priority=1,
-                )
+               Capability(intent=IntentRef("ResearchIntent"), inputSchema={}, outputSchema={})
             ],
         )
         super().__init__(definition, router)
 
     def handle(self, env):
         topic = env.payload.get("topic", "").strip()
+        print(topic)
         if not topic:
             return AgentResponse.failure(self.error("ResearchOrchestrator: missing topic"))
 
@@ -43,10 +40,11 @@ class ResearchOrchestratorAgent(BaseAgent):
             return summary
 
         # 5. Reason
-        reasoning = self.emit_intent("ReasonIntent", {"summary": summary.payload["summary"]})
+        reasoning = self.emit_intent("ReasoningIntent", {"summary": summary.payload["summary"]})
         if reasoning.error:
             return reasoning
 
         # 6. Action
         action = self.emit_intent("ActionIntent", {"reasoning": reasoning.payload})
         return action
+    

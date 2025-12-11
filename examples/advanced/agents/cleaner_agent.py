@@ -1,5 +1,5 @@
 from intentusnet.agents.base import BaseAgent
-from intentusnet.protocol.models import AgentDefinition, Capability, AgentResponse
+from intentusnet.protocol.models import AgentDefinition, Capability, AgentResponse, IntentRef
 
 
 class CleanerAgent(BaseAgent):
@@ -8,11 +8,12 @@ class CleanerAgent(BaseAgent):
         definition = AgentDefinition(
             name="cleaner-agent",
             capabilities=[
-                Capability(
-                    name="cleaner",
-                    intents=["CleanIntent"],
-                    priority=1,
+               Capability(
+                    intent=IntentRef("CleanIntent"),
+                    inputSchema={},
+                    outputSchema={}
                 )
+
             ],
         )
         super().__init__(definition, router)

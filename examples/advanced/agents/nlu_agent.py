@@ -1,5 +1,5 @@
 from intentusnet.agents.base import BaseAgent
-from intentusnet.protocol.models import AgentDefinition, Capability, AgentResponse, ErrorInfo, ErrorCode
+from intentusnet.protocol.models import AgentDefinition, Capability, IntentRef, AgentResponse, ErrorInfo, ErrorCode
 
 
 class NLUAgent(BaseAgent):
@@ -9,10 +9,12 @@ class NLUAgent(BaseAgent):
             name="nlu-agent",
             capabilities=[
                 Capability(
-                    name="nlu",
-                    intents=["ResearchIntent", "CompareIntent", "DeepResearchIntent"],
-                    priority=1,
-                )
+                    intent=IntentRef(name="ParseIntent"),
+                    inputSchema={"type": "object"},
+                    outputSchema={"type": "object"},
+                    fallbackAgents=[],
+                    priority=0)
+
             ],
         )
         super().__init__(definition, router)
@@ -20,14 +22,9 @@ class NLUAgent(BaseAgent):
     def handle(self, env):
         q = env.payload.get("topic") or env.payload.get("query") or ""
         q = q.strip()
-        
+
         if not q:
-            return AgentResponse.failure(
-                ErrorInfo(
-                    code=ErrorCode.AGENT_ERROR,
-                    message="NLU: missing topic/query"
-                )
-            )
+            return AgentResponse.failure(self.error("NLU: missing topic/query"))
 
         lower = q.lower()
 

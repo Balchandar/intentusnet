@@ -1,39 +1,57 @@
+# FILE: src/intentusnet/core/client.py
+
 from __future__ import annotations
-from typing import Dict, Any
+from typing import Any, Dict
+import uuid
+import datetime as dt
 
 from intentusnet.protocol.models import (
     IntentEnvelope,
     IntentRef,
     IntentMetadata,
+    IntentContext,
     AgentResponse,
 )
-from intentusnet.utils import new_id
+from intentusnet.protocol.enums import Priority
 
 
 class IntentusClient:
+    """
+    High-level client for sending intents.
+    Used by demos and applications.
+    """
 
-    def __init__(self, transport):
-        self._transport = transport
+    def __init__(self, router):
+        self._router = router
+        self._session_id = str(uuid.uuid4())
 
-    def send_intent(self, intent: str, payload: Dict[str, Any]) -> AgentResponse:
-        """
-        Sends an intent using the configured transport.
-        Returns a full AgentResponse object.
-        """
+    # ---------------------------------------------------------
+    # User-facing API
+    # ---------------------------------------------------------
+    def send_intent(
+        self,
+        intent_name: str,
+        payload: Dict[str, Any] | None = None,
+        *,
+        priority: Priority = Priority.NORMAL,
+        tags: list[str] | None = None,
+    ) -> AgentResponse:
+
+        now = dt.datetime.now(dt.timezone.utc).isoformat() + "Z"
+
         env = IntentEnvelope(
-            intent=IntentRef(name=intent),
-            payload=payload,
-            metadata=IntentMetadata(
-                traceId=new_id(),
-                requestId=new_id(),
-                identityChain=["client"],
+            version="1.0",
+            intent=IntentRef(name=intent_name),
+            payload=payload or {},
+            context=IntentContext(
+                sessionId=self._session_id,
+                workflowId=self._session_id,
             ),
-            context=None,
-            routing=None,
-            routingMetadata=None,
+            metadata=IntentMetadata(
+                timestamp=now,
+                priority=priority,
+                tags=tags or [],
+            ),
         )
 
-        # Transport MUST return AgentResponse
-        res: AgentResponse = self._transport.send_intent(env)
-
-        return res
+        return self._router.send_intent(env)

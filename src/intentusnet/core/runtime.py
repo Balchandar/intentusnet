@@ -1,79 +1,49 @@
-# intentusnet/core/runtime.py
+# FILE: src/intentusnet/core/runtime.py
 
 from __future__ import annotations
-from typing import Optional, Dict, Any
+from typing import Optional, Callable
 
-from intentusnet.core.registry import AgentRegistry
-from intentusnet.core.router import IntentRouter
-from intentusnet.core.orchestrator import Orchestrator
-from intentusnet.core.tracing import IntentusNetTracer
-
-from intentusnet.protocol.models import (
-    IntentEnvelope,
-    IntentRef,
-    IntentMetadata,
-    AgentResponse,
-)
-from intentusnet.utils import new_id
-
-# Optional typing-only import (prevents circular import issues)
-from typing import TYPE_CHECKING
-if TYPE_CHECKING:
-    from intentusnet.security.emcl import EMCLProvider
+from ..security.emcl.base import EMCLProvider
+from .registry import AgentRegistry
+from .router import IntentRouter
+from .tracing import TraceSink, InMemoryTraceSink
+from ..transport.inprocess import InProcessTransport
+from ..transport.base import Transport
+from ..agents.base import BaseAgent
+from .client import IntentusClient
 
 
 class IntentusRuntime:
     """
-    Top-level runtime wiring together:
-    - Registry
-    - Router (with optional EMCL)
-    - Tracer
-    - Orchestrator
+    High-level runtime that wires:
+    - AgentRegistry
+    - IntentRouter
+    - Transport (in-process by default)
+    - Optional EMCL provider
     """
 
-    def __init__(self, emcl_provider: "EMCLProvider | None" = None):
-        # Core components
+    def __init__(
+        self,
+        *,
+        trace_sink: Optional[TraceSink] = None,
+        emcl_provider: Optional[EMCLProvider] = None,
+    ) -> None:
         self.registry = AgentRegistry()
-        self.tracer = IntentusNetTracer()
-
-        # Router gets optional EMCL provider
-        self.router = IntentRouter(
-            self.registry,
-            self.tracer,
-            emcl_provider=emcl_provider,   # <-- IMPORTANT PATCH
-        )
-
-        self.orchestrator = Orchestrator(self.router, self.tracer)
-
-        # Store provider for external inspection
+        self.trace_sink = trace_sink or InMemoryTraceSink()
+        self.router = IntentRouter(self.registry, trace_sink=self.trace_sink)
+        self.transport: Transport = InProcessTransport(self.router)
         self.emcl_provider = emcl_provider
 
-    # ------------------------------------------------------------------
-    def handle_intent(self, intent: str, payload: Dict[str, Any]) -> AgentResponse:
+    def register_agent(
+        self,
+        factory: Callable[[IntentRouter, Optional[EMCLProvider]], BaseAgent],
+    ) -> BaseAgent:
         """
-        Single-shot intent execution through the router.
+        Agent factory receives (router, emcl_provider) and returns a BaseAgent.
         """
+        agent = factory(self.router)
+        self.registry.register(agent)
+        return agent
 
-        metadata = IntentMetadata(
-            traceId=new_id(),
-            requestId=new_id(),
-            identityChain=["runtime"],
-        )
-
-        envelope = IntentEnvelope(
-            intent=IntentRef(name=intent),
-            payload=payload,
-            metadata=metadata,
-            context=None,
-            routing=None,
-            routingMetadata=None,
-        )
-
-        return self.router.route(envelope)
-
-    # ------------------------------------------------------------------
-    def run_workflow(self, definition, initial_payload: Dict[str, Any]):
-        """
-        High-level workflow execution (orchestrator).
-        """
-        return self.orchestrator.run(definition, initial_payload)
+    def client(self) -> IntentusClient:
+        return IntentusClient(self.transport)

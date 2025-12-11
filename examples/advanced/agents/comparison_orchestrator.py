@@ -1,5 +1,5 @@
 from intentusnet.agents.base import BaseAgent
-from intentusnet.protocol.models import AgentDefinition, Capability, AgentResponse
+from intentusnet.protocol.models import AgentDefinition, Capability, AgentResponse, IntentRef
 
 
 class ComparisonOrchestratorAgent(BaseAgent):
@@ -9,10 +9,11 @@ class ComparisonOrchestratorAgent(BaseAgent):
             name="comparison-orchestrator",
             capabilities=[
                 Capability(
-                    name="comparison",
-                    intents=["CompareIntent"],
-                    priority=1,
+                    intent=IntentRef("CompareIntent"),
+                    inputSchema={},
+                    outputSchema={}
                 )
+
             ],
         )
         super().__init__(definition, router)

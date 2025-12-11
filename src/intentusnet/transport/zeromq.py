@@ -1,35 +1,112 @@
+"""
+ZeroMQ Transport for IntentusNet
+
+- Simple REQ/REP client transport
+- Sends TransportEnvelope with IntentEnvelope (or EMCL)
+- Expects TransportEnvelope with AgentResponse (or EMCL)
+"""
+
+from __future__ import annotations
+
+import json
+from dataclasses import asdict
+from typing import Any, Dict, Optional
+
 import zmq
+
 from intentusnet.protocol.models import (
     IntentEnvelope,
     AgentResponse,
+    EMCLEnvelope,
     ErrorInfo,
-    ErrorCode,
 )
-from intentusnet.utils import json_dumps, json_loads
+from intentusnet.protocol.enums import ErrorCode
+from intentusnet.security.emcl.base import EMCLProvider
+
+
+def _json_dumps(obj: Any) -> str:
+    return json.dumps(obj, separators=(",", ":"), ensure_ascii=False)
 
 
 class ZeroMQTransport:
+    """
+    Blocking ZeroMQ REQ/REP transport.
 
-    def __init__(self, endpoint: str):
+    Usage:
+        transport = ZeroMQTransport("tcp://localhost:5555", emcl=provider)
+        resp = transport.send_intent(env)
+    """
+
+    def __init__(self, address: str, *, emcl: Optional[EMCLProvider] = None) -> None:
+        self._address = address
+        self._emcl = emcl
         self._ctx = zmq.Context.instance()
         self._socket = self._ctx.socket(zmq.REQ)
-        self._socket.connect(endpoint)
+        self._socket.connect(address)
+
+    def close(self) -> None:
+        try:
+            self._socket.close(0)
+        except Exception:
+            pass
 
     def send_intent(self, env: IntentEnvelope) -> AgentResponse:
-        env.metadata.identityChain.append("zeromq-transport")
+        intent_body: Dict[str, Any] = asdict(env)
 
-        self._socket.send_string(json_dumps(env.__dict__))
+        if self._emcl is not None:
+            enc = self._emcl.encrypt(intent_body)
+            out_env = {
+                "protocol": "INTENTUSNET/1.0",
+                "protocolNegotiation": {"minVersion": "1.0", "maxVersion": "1.0"},
+                "messageType": "emcl",
+                "headers": {},
+                "body": asdict(enc),
+            }
+        else:
+            out_env = {
+                "protocol": "INTENTUSNET/1.0",
+                "protocolNegotiation": {"minVersion": "1.0", "maxVersion": "1.0"},
+                "messageType": "intent",
+                "headers": {},
+                "body": intent_body,
+            }
+
+        self._socket.send_string(_json_dumps(out_env))
         raw = self._socket.recv_string()
-        data = json_loads(raw)
 
-        if data.get("error"):
-            err = data["error"]
-            return AgentResponse.failure(
-                ErrorInfo(
-                    code=ErrorCode(err.get("code", "UNKNOWN")),
-                    message=err.get("message", ""),
-                    details=err.get("details", {}),
-                )
+        decoded: Dict[str, Any] = json.loads(raw)
+        msg_type = decoded.get("messageType")
+        body = decoded.get("body") or {}
+
+        if msg_type == "emcl":
+            if self._emcl is None:
+                raise RuntimeError("Received EMCL response but no EMCLProvider configured")
+            body = self._emcl.decrypt(EMCLEnvelope(**body))
+
+        return self._decode_agent_response(body)
+
+    def _decode_agent_response(self, data: Dict[str, Any]) -> AgentResponse:
+        error_data = data.get("error")
+        error_obj: Optional[ErrorInfo] = None
+
+        if error_data:
+            code_raw = error_data.get("code") or "INTERNAL_AGENT_ERROR"
+            try:
+                code = ErrorCode(code_raw)
+            except Exception:
+                code = ErrorCode.INTERNAL_AGENT_ERROR
+
+            error_obj = ErrorInfo(
+                code=code,
+                message=error_data.get("message", ""),
+                retryable=error_data.get("retryable", False),
+                details=error_data.get("details", {}) or {},
             )
 
-        return AgentResponse.success(data.get("payload"))
+        return AgentResponse(
+            version=data.get("version", "1.0"),
+            status=data.get("status", "error"),
+            payload=data.get("payload"),
+            metadata=data.get("metadata", {}) or {},
+            error=error_obj,
+        )

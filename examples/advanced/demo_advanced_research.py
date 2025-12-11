@@ -1,13 +1,10 @@
+# FILE: examples/advanced/demo_advanced_research.py
+
 from __future__ import annotations
-
-import sys
-from typing import Optional
-
+import json
 from intentusnet.core.runtime import IntentusRuntime
-from intentusnet.transport.inprocess import InProcessTransport
-from intentusnet.core.client import IntentusClient
-from intentusnet.adapters.mcp_adapter import MCPAdapter
-from intentusnet.security.emcl.simple_hmac import SimpleHMACEMCLProvider
+from intentusnet.core.tracing import IntentusNetTracer
+from intentusnet.protocol.models import IntentRef
 
 from examples.advanced.agents.nlu_agent import NLUAgent
 from examples.advanced.agents.research_orchestrator import ResearchOrchestratorAgent
@@ -21,215 +18,101 @@ from examples.advanced.agents.reasoning_agent import ReasoningAgent
 from examples.advanced.agents.action_agent import ActionAgent
 
 
-# ---------------------------------------------------------------------------
-# Agent Registration
-# ---------------------------------------------------------------------------
+def ask_user(prompt):
+    return input(prompt).strip()
 
-def register_all(runtime: IntentusRuntime) -> None:
-    """
-    Register all advanced demo agents into the runtime's registry.
-    """
-    registry = runtime.registry
-    router = runtime.router
+def register_all(runtime: IntentusRuntime):
+# REGISTER EXECUTION AGENTS FIRST
+    runtime.register_agent(WebSearchAgent)
+    runtime.register_agent(AltSearchAgent)
+    runtime.register_agent(ScraperAgent)
+    runtime.register_agent(CleanerAgent)
+    runtime.register_agent(SummarizerAgent)
+    runtime.register_agent(ReasoningAgent)
+    runtime.register_agent(ActionAgent)
 
-    registry.register(NLUAgent(router))
-    registry.register(ResearchOrchestratorAgent(router))
-    registry.register(ComparisonOrchestratorAgent(router))
-    registry.register(WebSearchAgent(router))
-    registry.register(AltSearchAgent(router))
-    registry.register(ScraperAgent(router))
-    registry.register(CleanerAgent(router))
-    registry.register(SummarizerAgent(router))
-    registry.register(ReasoningAgent(router))
-    registry.register(ActionAgent(router))
+    # REGISTER ORCHESTRATORS
+    runtime.register_agent(ResearchOrchestratorAgent)
+    runtime.register_agent(ComparisonOrchestratorAgent)
+
+    # REGISTER NLU LAST (IMPORTANT)
+    runtime.register_agent(NLUAgent)
 
 
-# ---------------------------------------------------------------------------
-# Trace Viewer
-# ---------------------------------------------------------------------------
 
-def show_trace(runtime: IntentusRuntime, trace_id: Optional[str] = None) -> None:
-    tracer = runtime.tracer
-    
-    if tracer is None:
-        print("\n(no tracer available)\n")
-        return
-
-    spans = tracer.get_spans()
-
-    if trace_id:
-        spans = [s for s in spans if s.traceId == trace_id]
-
-    print("\n=== TRACE LOG ===")
-    print(f"{'Agent':20} {'Start':24} {'End(ms)':24} {'Status':10}")
- 
-    for s in spans:
-        status = ("Error" if s.attributes.get("error") else "Success") if s.attributes else ""
-        agent = s.attributes.get("agent") if s.attributes else ""
-        print(f"{agent:20} {s.startTime:24} {s.endTime:24} {status:10}")
-
-
-# ---------------------------------------------------------------------------
-# Workflows (via IntentusClient – Option B)
-# ---------------------------------------------------------------------------
-
-def workflow_research(client: IntentusClient, topic: str, runtime: IntentusRuntime) -> None:
-    resp = client.send_intent("ResearchIntent", {"topic": topic})
-
-    print("\n==== RESULT ====")
-    if resp.error:
-        print("Error:", getattr(resp.error, "message", resp.error))
-    else:
-        # Print full payload – orchestrator decides shape
-        print(resp.payload)
-
-    trace_id = None
-    meta = getattr(resp, "metadata", None)
-    if isinstance(meta, dict):
-        trace_id = meta.get("traceId")
-    show_trace(runtime, trace_id)
-
-
-def workflow_compare(client: IntentusClient, topic_a: str, topic_b: str, runtime: IntentusRuntime) -> None:
-    query = f"{topic_a} vs {topic_b}"
-    resp = client.send_intent("ResearchIntent", {"topic": query})
-
-
-    print("\n==== RESULT ====")
-    if resp.error:
-        print("Error:", getattr(resp.error, "message", resp.error))
-    else:
-        print(resp.payload)
-
-    trace_id = None
-    meta = getattr(resp, "metadata", None)
-    if isinstance(meta, dict):
-        trace_id = meta.get("traceId")
-    show_trace(runtime, trace_id)
-
-
-def workflow_deep_research(client: IntentusClient, topic: str, runtime: IntentusRuntime) -> None:
-    query = f"deep {topic}"
-    resp = client.send_intent("ResearchIntent", {"topic": query})
-
-
-    print("\n==== RESULT ====")
-    if resp.error:
-        print("Error:", getattr(resp.error, "message", resp.error))
-    else:
-        print(resp.payload)
-
-    trace_id = None
-    meta = getattr(resp, "metadata", None)
-    if isinstance(meta, dict):
-        trace_id = meta.get("traceId")
-    show_trace(runtime, trace_id)
-
-
-# ---------------------------------------------------------------------------
-# MCP + EMCL Demos
-# ---------------------------------------------------------------------------
-
-def run_mcp_demo(runtime: IntentusRuntime) -> None:
-    """
-    Minimal MCP-style demo: send a fake MCP tool call through MCPAdapter.
-    """
-    print("\n=== MCP DEMO ===")
-    adapter = MCPAdapter(runtime.router)
-
-    mcp_request = {
-        "name": "ResearchIntent",
-        "arguments": {"topic": "MCP protocol and agent runtimes"},
-    }
-
-    result = adapter.handle_mcp_request(mcp_request)
-    print("MCP Response:")
-    print(result)
-
-
-def run_encrypted_http_demo() -> None:
-    """
-    Minimal EMCL demo – no real HTTP here, just show encrypt/decrypt flow.
-    """
-    print("\n=== ENCRYPTED HTTP DEMO ===")
-
-    # Simple integrity-only provider for demo (string key, not bytes)
-    provider = SimpleHMACEMCLProvider("super-secret-key-123")
-
-    body = {
-        "intent": "ResearchIntent",
-        "payload": {"topic": "Cybersecurity for AI agents"},
-    }
-
-    encrypted = provider.encrypt(body)
-    print("Encrypted envelope:", encrypted)
-
-    decrypted = provider.decrypt(encrypted)
-    print("Decrypted body:", decrypted)
-
-
-# ---------------------------------------------------------------------------
-# CLI UI (interactive when TTY is available)
-# ---------------------------------------------------------------------------
-
-def main() -> None:
+def run_demo():
     runtime = IntentusRuntime()
+    
     register_all(runtime)
 
-    # Use full transport → router → agent path
-    transport = InProcessTransport(runtime.router)
-    client = IntentusClient(transport)
+    client = runtime.client()
+
+    print("=== IntentusNet Advanced Demo ===")
 
     while True:
-        print("\n=== IntentusNet Advanced Demo ===")
-        print("1. Research a topic")
+        print("\n1. Research a topic")
         print("2. Compare two topics")
         print("3. Deep-dive research")
-        print("4. Show trace log (all spans)")
-        print("5. Run MCP demo")
-        print("6. Run encrypted HTTP demo")
-        print("7. Exit")
+        print("4. Show trace log")
+        print("5. Exit")
 
-        choice = input("> ").strip()
+        choice = ask_user("> ")
 
         if choice == "1":
-            topic = input("Enter topic: ").strip()
-            if topic:
-                workflow_research(client, topic, runtime)
+            text = ask_user("Enter topic: ")
+
+            # ---- Stage 1: NLU ----
+            nlu_resp = client.send_intent("ParseIntent", {"query": text})
+            if nlu_resp.status == "error":
+                print("NLU error:", nlu_resp.error.message)
+                continue
+
+            predicted_intent = nlu_resp.payload["intent"]
+            arguments = nlu_resp.payload.get("arguments", {})
+
+            print("\nNLU → Predicted intent:", predicted_intent)
+            
+            # ---- Stage 2: Execute ResearchIntent ----
+            resp = client.send_intent(predicted_intent, arguments)
+
+            print("\n==== RESULT ====")
+            print(resp.payload)
 
         elif choice == "2":
-            a = input("Topic A: ").strip()
-            b = input("Topic B: ").strip()
-            if a and b:
-                workflow_compare(client, a, b, runtime)
+            t1 = ask_user("Topic A: ")
+            t2 = ask_user("Topic B: ")
+            nlu_resp = client.send_intent("ParseIntent", {"query": f"compare {t1} and {t2}"})
+            predicted = nlu_resp.payload["intent"]
+            args = nlu_resp.payload.get("arguments", {})
+            print(predicted)
+            resp = client.send_intent(predicted, args)
+            print("\n==== RESULT ====")
+            print(resp.payload)
 
         elif choice == "3":
-            topic = input("Deep topic: ").strip()
-            if topic:
-                workflow_deep_research(client, topic, runtime)
+            topic = ask_user("Deep dive into: ")
+
+            nlu_resp = client.send_intent("ParseIntent", {"query": topic})
+            predicted = nlu_resp.payload["intent"]
+            args = nlu_resp.payload.get("arguments", {})
+            print(predicted)
+            resp = client.send_intent(predicted, args)
+            print("\n==== RESULT ====")
+            print(resp.payload)
 
         elif choice == "4":
-            # Show all spans collected so far
-            show_trace(runtime, trace_id=None)
+            print("\n=== TRACE LOG ===")
+            for span in runtime.trace_sink.export():
+                print(
+                    f"{span.agent:20} {span.intent:20} "
+                    f"{span.latencyMs:8}ms  {span.status}"
+                )
 
         elif choice == "5":
-            run_mcp_demo(runtime)
-
-        elif choice == "6":
-            run_encrypted_http_demo()
-
-        elif choice == "7":
-            print("Bye.")
-            sys.exit(0)
-
+            break
         else:
-            print("Invalid choice")
+            print("Invalid choice!")
 
 
 if __name__ == "__main__":
-    # Disable CLI when running in a non-interactive environment (e.g., docker-compose worker)
-    if not sys.stdin.isatty():
-        print("Non-interactive mode: CLI disabled.")
-        sys.exit(0)
-
-    main()
+    run_demo()

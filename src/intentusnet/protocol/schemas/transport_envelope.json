@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "TransportEnvelope",
+  "type": "object",
+  "required": [
+    "protocol",
+    "protocolNegotiation",
+    "messageType",
+    "headers",
+    "body"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "protocol": { "type": "string" },
+
+    "protocolNegotiation": {
+      "type": "object",
+      "required": ["minVersion", "maxVersion"],
+      "additionalProperties": false,
+      "properties": {
+        "minVersion": { "type": "string" },
+        "maxVersion": { "type": "string" }
+      }
+    },
+
+    "messageType": {
+      "type": "string",
+      "enum": ["intent", "response", "event", "emcl"]
+    },
+
+    "headers": { "type": "object" },
+
+    "body": { "type": "object" }
+  }
+}

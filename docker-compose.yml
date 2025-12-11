@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   intentusnet-api:
     container_name: intentusnet-api

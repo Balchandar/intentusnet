@@ -1,28 +1,67 @@
+# FILE: src/intentusnet/protocol/models.py
 from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
-from enum import Enum
+import uuid
+from .enums import Priority, RoutingStrategy, ErrorCode
 
 
-# ------------------------------------------------------------
-# ENUMS
-# ------------------------------------------------------------
+# -------------------------
+# INTENTS
+# -------------------------
 
-class ErrorCode(Enum):
-    ROUTING_ERROR = "routing_error"
-    AGENT_ERROR = "agent_error"
-    VALIDATION_ERROR = "validation_error"
-    TRANSPORT_ERROR = "transport_error"
-    UNKNOWN = "unknown"
+@dataclass
+class IntentRef:
+    name: str
+    version: str = "1.0"
 
 
-class RoutingStrategy(Enum):
-    PRIORITY = "priority"
+@dataclass
+class IntentContext:
+    sessionId: str
+    workflowId: str
+    memory: Dict[str, Any] = field(default_factory=dict)
+    history: List[Dict[str, Any]] = field(default_factory=list)
 
 
-# ------------------------------------------------------------
-# CORE ERROR MODEL
-# ------------------------------------------------------------
+@dataclass
+class IntentMetadata:
+    timestamp: str
+    sourceAgent: Optional[str] = None
+    priority: Priority = Priority.NORMAL
+    traceId: str = field(default_factory=lambda: str(uuid.uuid4()))
+    correlationId: str = field(default_factory=lambda: str(uuid.uuid4()))
+    tags: List[str] = field(default_factory=list)
+
+
+@dataclass
+class RoutingOptions:
+    targetAgent: Optional[str] = None
+    broadcast: bool = False
+    fallbackAgents: List[str] = field(default_factory=list)
+
+
+@dataclass
+class RoutingMetadata:
+    routeType: RoutingStrategy = RoutingStrategy.DIRECT
+    previousAgents: List[str] = field(default_factory=list)
+    retryCount: int = 0
+
+
+@dataclass
+class IntentEnvelope:
+    version: str
+    intent: IntentRef
+    payload: Dict[str, Any]
+    context: IntentContext
+    metadata: IntentMetadata
+    routing: RoutingOptions = field(default_factory=RoutingOptions)
+    routingMetadata: RoutingMetadata = field(default_factory=RoutingMetadata)
+
+
+# -------------------------
+# RESPONSE & ERRORS
+# -------------------------
 
 @dataclass
 class ErrorInfo:
@@ -32,140 +71,110 @@ class ErrorInfo:
     details: Dict[str, Any] = field(default_factory=dict)
 
 
-# ------------------------------------------------------------
-# WORKFLOW + ROUTING CONTEXT MODELS (NEW)
-# ------------------------------------------------------------
-
 @dataclass
-class IntentContext:
-    """
-    Workflow/session state carried across steps.
-    """
-    sessionId: str
-    workflowId: str
-    memory: Dict[str, Any] = field(default_factory=dict)
-    history: List[Dict[str, Any]] = field(default_factory=list)
+class AgentResponse:
+    version: str
+    status: str
+    payload: Optional[Dict[str, Any]]
+    metadata: Dict[str, Any]
+    error: Optional[ErrorInfo] = None
+
+    @staticmethod
+    def success(payload: Any, metadata: Optional[Dict[str, Any]] = None) -> "AgentResponse":
+        return AgentResponse(
+            version="1.0",
+            status="success",
+            payload=payload,
+            metadata=metadata or {},
+            error=None,
+        )
+
+    @staticmethod
+    def failure(error: ErrorInfo, metadata: Optional[Dict[str, Any]] = None) -> "AgentResponse":
+        return AgentResponse(
+            version="1.0",
+            status="error",
+            payload=None,
+            metadata=metadata or {},
+            error=error,
+        )
 
 
-@dataclass
-class RoutingOptions:
-    """
-    Developer-level routing instructions.
-    """
-    targetAgent: Optional[str] = None
-    fallbackAgents: List[str] = field(default_factory=list)
-    broadcast: bool = False
-
-
-@dataclass
-class RoutingMetadata:
-    """
-    Router-generated metadata for debugging, tracing, UI visibility.
-    """
-    selectedAgent: Optional[str] = None
-    candidates: List[str] = field(default_factory=list)
-    strategy: Optional[str] = None
-    error: Optional[str] = None
-
-
-# ------------------------------------------------------------
-# INTENT MODELS
-# ------------------------------------------------------------
-
-@dataclass
-class IntentRef:
-    name: str
-    version: str = "1.0"
-
-
-@dataclass
-class IntentMetadata:
-    traceId: str
-    requestId: str
-    identityChain: List[str] = field(default_factory=list)
-    strategy: RoutingStrategy = RoutingStrategy.PRIORITY
-
-
-# ------------------------------------------------------------
-# INTENT ENVELOPE (UPDATED)
-# ------------------------------------------------------------
-
-@dataclass
-class IntentEnvelope:
-    """
-    Full envelope passed into router and agents.
-    """
-    intent: IntentRef
-    payload: Dict[str, Any]
-    metadata: IntentMetadata
-
-    context: Optional[IntentContext] = None
-    routing: Optional[RoutingOptions] = None
-    routingMetadata: Optional[RoutingMetadata] = None
-
-
-# ------------------------------------------------------------
-# AGENT DEFINITIONS (unchanged)
-# ------------------------------------------------------------
+# -------------------------
+# AGENT DEFINITION (UPDATED)
+# -------------------------
 
 @dataclass
 class AgentIdentity:
     agentId: str
-    version: str = "1.0"
+    roles: List[str] = field(default_factory=list)
+    signingKeyId: Optional[str] = None
 
 
 @dataclass
 class Capability:
-    name: str
-    intents: List[str]
-    priority: int = 100
+    intent: IntentRef
+    inputSchema: Dict[str, Any]
+    outputSchema: Dict[str, Any]
+    examples: List[Dict[str, Any]] = field(default_factory=list)
+    fallbackAgents: List[str] = field(default_factory=list)
+    priority: int = 0
 
+
+@dataclass
+class AgentEndpoint:
+    type: str  # local | http | zeromq | websocket | grpc
+    address: str
+
+
+@dataclass
+class AgentHealth:
+    status: str
+    lastHeartbeat: str
+
+
+@dataclass
+class AgentRuntimeInfo:
+    language: str
+    environment: str
+    scaling: str  # auto | manual
+
+
+# RECOMMENDED NEW SHAPE
 
 @dataclass
 class AgentDefinition:
     name: str
-    capabilities: List[Capability]
+    version: str = "1.0"
+    capabilities: List[Capability] = field(default_factory=list)
+
+    # Optional metadata for distributed mode / future features
+    identity: Optional[AgentIdentity] = None
+    endpoint: Optional[AgentEndpoint] = None
+    health: Optional[AgentHealth] = None
+    runtime: Optional[AgentRuntimeInfo] = None
 
 
-# ------------------------------------------------------------
-# AGENT RESPONSE
-# ------------------------------------------------------------
+
+# -------------------------
+# ROUTER DECISION
+# -------------------------
 
 @dataclass
-class AgentResponse:
-    payload: Optional[Dict[str, Any]]
-    metadata: Dict[str, Any] = field(default_factory=dict)
-    error: Optional[ErrorInfo] = None
+class RouterDecision:
+    selectedAgent: str
+    routingStrategy: RoutingStrategy
+    fallbackOrder: List[str]
+    reason: str
+    traceId: str
 
-    @property
-    def status(self) -> str:
-        return "success" if self.error is None else "error"
 
-    @staticmethod
-    def success(payload: Dict[str, Any]):
-        return AgentResponse(payload=payload, error=None)
-
-    @staticmethod
-    def failure(error: ErrorInfo):
-        return AgentResponse(payload=None, error=error)
-
-# ---------------------------
-# EMCL Envelope (Protocol)
-# ---------------------------
-
-from dataclasses import dataclass, field
-from typing import List
-
+# -------------------------
+# EMCLEnvelope unchanged
+# -------------------------
 
 @dataclass
 class EMCLEnvelope:
-    """
-    Encrypted Message Context Layer (EMCL) envelope.
-    Produced by encryption providers (AES-GCM or HMAC).
-
-    This is a *protocol model* used by transports, router-entry,
-    and security layer for decrypt/verify.
-    """
     emclVersion: str
     ciphertext: str
     nonce: str

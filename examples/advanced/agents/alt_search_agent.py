@@ -1,5 +1,5 @@
 from intentusnet.agents.base import BaseAgent
-from intentusnet.protocol.models import AgentDefinition, Capability, AgentResponse
+from intentusnet.protocol.models import AgentDefinition, Capability, IntentRef, AgentResponse
 
 
 class AltSearchAgent(BaseAgent):
@@ -7,13 +7,7 @@ class AltSearchAgent(BaseAgent):
     def __init__(self, router):
         definition = AgentDefinition(
             name="alt-search-agent",
-            capabilities=[
-                Capability(
-                    name="alt-search",
-                    intents=["SearchIntent"],
-                    priority=50,  # fallback (higher number = lower priority)
-                )
-            ],
+            capabilities=[Capability(intent=IntentRef("SearchIntent"), inputSchema={}, outputSchema={})],
         )
         super().__init__(definition, router)
 

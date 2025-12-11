@@ -1,71 +1,104 @@
-# intentusnet/core/agent.py
-
 from __future__ import annotations
-from typing import Any, Dict
-from intentusnet.protocol.models import AgentResponse, ErrorInfo, ErrorCode
+from typing import Any, Dict, Optional
+import uuid
+import datetime as dt
+
+from intentusnet.protocol.models import (
+    IntentEnvelope,
+    IntentRef,
+    IntentContext,
+    IntentMetadata,
+    AgentResponse,
+    ErrorInfo,
+)
+from intentusnet.protocol.enums import Priority, ErrorCode
 
 
 class BaseAgent:
     """
-    Shared logic for all agents in IntentusNet.
+    Base class for all IntentusNet agents.
+
+    Responsibilities:
+    - Provide definition (name, capabilities)
+    - Implement handle()
+    - Call other agents via emit_intent()
+    - Standardized error creation (returns ErrorInfo)
     """
 
     def __init__(self, definition, router):
         self.definition = definition
         self.router = router
-        self.name = definition.name
 
-    # ------------------------------------------------------
-    # Capability helpers
-    # ------------------------------------------------------
-    def supports_intent(self, intent_name: str) -> bool:
-        for c in self.definition.capabilities:
-            if intent_name in c.intents:
-                return True
-        return False
+    # ---------------------------------------------------------
+    # Main entrypoint called by Router
+    # ---------------------------------------------------------
+    def handle_intent(self, env: IntentEnvelope) -> AgentResponse:
+        """
+        Router always calls this wrapper.
+        Agents only implement handle().
+        """
+        return self.handle(env)
 
-    def priority_for_intent(self, intent_name: str) -> int:
-        for c in self.definition.capabilities:
-            if intent_name in c.intents:
-                return c.priority
-        return 9999
+    # ---------------------------------------------------------
+    # Must be overridden by agent implementations
+    # ---------------------------------------------------------
+    def handle(self, env: IntentEnvelope) -> AgentResponse:
+        raise NotImplementedError(
+            f"Agent {self.definition.name} did not implement handle()"
+        )
 
-    # ------------------------------------------------------
-    # Emit intent to router → sub-workflow
-    # ------------------------------------------------------
-    def emit_intent(self, intent_name: str, payload: Dict[str, Any]):
-        from intentusnet.protocol.models import IntentEnvelope, IntentRef, IntentMetadata
-        from intentusnet.utils import new_id
+    # ---------------------------------------------------------
+    # Emit sub-intents (used inside orchestrators)
+    # ---------------------------------------------------------
+    def emit_intent(
+        self,
+        intent_name: str,
+        payload: Dict[str, Any],
+        *,
+        priority: Priority = Priority.NORMAL,
+        tags: Optional[list[str]] = None,
+    ) -> AgentResponse:
+        """
+        Allows an agent to call another agent internally.
+        """
+
+        now = dt.datetime.utcnow().isoformat() + "Z"
 
         env = IntentEnvelope(
+            version="1.0",
             intent=IntentRef(name=intent_name),
             payload=payload,
+            context=IntentContext(
+                sessionId=str(uuid.uuid4()),
+                workflowId=str(uuid.uuid4()),
+            ),
             metadata=IntentMetadata(
-                traceId=new_id(),
-                requestId=new_id(),
-                identityChain=[self.name],
+                timestamp=now,
+                priority=priority,
+                tags=tags or [],
             )
         )
 
-        return self.router.route(env)
+        return self.router.route_intent(env)
 
-    # ------------------------------------------------------
-    # Success / Failure wrappers
-    # ------------------------------------------------------
-    def success(self, payload: Dict[str, Any]):
-        return AgentResponse.success(payload)
+    # ---------------------------------------------------------
+    # Standardized error constructor for all agents
+    # ---------------------------------------------------------
+    def error(
+        self,
+        message: str,
+        *,
+        code: ErrorCode = ErrorCode.AGENT_ERROR,
+        retryable: bool = False,
+        details: Optional[Dict[str, Any]] = None,
+    ) -> ErrorInfo:
+        """
+        Agents should call: AgentResponse.failure(self.error("msg"))
+        """
 
-    def error(self, msg: str):
-        return AgentResponse.failure(
-            ErrorInfo(
-                code=ErrorCode.AGENT_ERROR,
-                message=msg,
-                retryable=False
-            )
+        return ErrorInfo(
+            code=code,
+            message=message,
+            retryable=retryable,
+            details=details or {},
         )
-
-    # ------------------------------------------------------
-    # To be overridden by child agents
-    # ------------------------------------------------------
-    def handle(self, env):
-        raise NotImplementedError

@@ -1,5 +1,5 @@
 from intentusnet.agents.base import BaseAgent
-from intentusnet.protocol.models import AgentDefinition, Capability, AgentResponse
+from intentusnet.protocol.models import AgentDefinition, Capability, AgentResponse, IntentRef
 
 
 class ReasoningAgent(BaseAgent):
@@ -8,11 +8,12 @@ class ReasoningAgent(BaseAgent):
         definition = AgentDefinition(
             name="reasoning-agent",
             capabilities=[
-                Capability(
-                    name="reasoning",
-                    intents=["ReasonIntent"],
-                    priority=1,
+                    Capability(
+                    intent=IntentRef("ReasoningIntent"),
+                    inputSchema={},
+                    outputSchema={}
                 )
+
             ],
         )
         super().__init__(definition, router)

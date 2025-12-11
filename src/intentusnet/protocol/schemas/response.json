@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AgentResponse",
+  "type": "object",
+  "required": ["version", "status", "metadata"],
+  "additionalProperties": false,
+  "properties": {
+    "version": { "type": "string" },
+
+    "status": {
+      "type": "string",
+      "enum": ["success", "error"]
+    },
+
+    "payload": { "type": ["object", "null"] },
+
+    "metadata": { "type": "object" },
+
+    "error": {
+      "type": ["object", "null"],
+      "required": ["code", "message"],
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "type": "string",
+          "enum": [
+            "ROUTING_ERROR",
+            "CAPABILITY_NOT_FOUND",
+            "AGENT_TIMEOUT",
+            "AGENT_UNAVAILABLE",
+            "PROTOCOL_ERROR",
+            "TRANSPORT_ERROR",
+            "UNAUTHORIZED",
+            "RATE_LIMIT",
+            "INTERNAL_AGENT_ERROR",
+            "PAYLOAD_TOO_LARGE",
+            "WORKFLOW_ABORTED",
+            "EMCL_FAILURE"
+          ]
+        },
+        "message": { "type": "string" },
+        "retryable": { "type": "boolean", "default": false },
+        "details": { "type": "object", "default": {} }
+      }
+    }
+  }
+}
