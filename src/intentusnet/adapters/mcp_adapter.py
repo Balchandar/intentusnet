@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 from typing import Any, Dict, Optional
-
-from intentusnet.protocol.models import (
+from ..protocol import (
     IntentEnvelope,
     IntentMetadata,
     IntentContext,
@@ -11,8 +10,9 @@ from intentusnet.protocol.models import (
     RoutingMetadata,
     IntentRef,
     AgentResponse,
-    ErrorInfo,
+    ErrorInfo
 )
+
 from intentusnet.utils import new_id
 from intentusnet.core.router import IntentRouter
 from intentusnet.security.emcl.base import EMCLProvider

@@ -7,18 +7,16 @@ import time
 import uuid
 
 from intentusnet.core.router import IntentRouter
-from intentusnet.core.tracing import IntentusNetTracer
-from intentusnet.protocol.models import (
+from intentusnet.core.tracing import InMemoryTraceSink
+from intentusnet.protocol.intent import (
     IntentEnvelope,
     IntentRef,
     IntentMetadata,
     IntentContext,
     RoutingOptions,
-    RoutingMetadata,
-    AgentResponse,
-    ErrorInfo,
-    ErrorCode,
+    RoutingMetadata
 )
+from intentusnet.protocol.response import AgentResponse, ErrorInfo
 from intentusnet.utils import new_id
 
 
@@ -63,9 +61,9 @@ class Orchestrator:
     - Uses a single traceId across all steps for tracing
     """
 
-    def __init__(self, router: IntentRouter, tracer: Optional[IntentusNetTracer] = None):
+    def __init__(self, router: IntentRouter, tracer: Optional[InMemoryTraceSink] = None):
         self._router = router
-        self._tracer = tracer or IntentusNetTracer()
+        self._tracer = tracer or InMemoryTraceSink()
 
     # ------------------------------------------------------------------
     def _now_iso(self) -> str:

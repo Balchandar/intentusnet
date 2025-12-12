@@ -1,105 +1,61 @@
 from __future__ import annotations
-from dataclasses import dataclass, field
-from typing import Any, Dict, List
-import time
-import uuid
+
+from abc import ABC, abstractmethod
+from typing import List
+
+from intentusnet.protocol.tracing import TraceSpan
 
 
-# ----------------------------------------------------------------------
-# TRACE SPAN DATA MODEL (FINAL)
-# ----------------------------------------------------------------------
-@dataclass
-class TraceSpan:
+class TraceSink(ABC):
     """
-    Represents a single recorded event in the runtime.
-    Core fields are minimal. 
-    Demo-friendly accessors are provided for compatibility.
+    Abstraction for recording trace spans produced by the router.
+
+    Implementations can:
+    - keep spans in memory (for demos, tests)
+    - forward spans to OpenTelemetry exporters
+    - send spans to logs, Kafka, etc.
     """
-    id: str
-    traceId: str
-    name: str
-    startTime: str
-    endTime: str
-    attributes: Dict[str, Any] = field(default_factory=dict)
 
-    # --- Compatibility properties for pretty printing in demo ----
-
-    @property
-    def agent(self) -> str:
-        return self.attributes.get("agent", "")
-
-    @property
-    def intent(self) -> str:
-        return self.attributes.get("intent", "")
-
-    @property
-    def latencyMs(self) -> int:
-        return self.attributes.get("latencyMs", 0)
-
-    @property
-    def status(self) -> str:
-        return self.attributes.get("status", "")
-
-    @property
-    def error(self) -> str:
-        return self.attributes.get("error", "")
-
-
-# ----------------------------------------------------------------------
-# GENERIC TRACE SINK INTERFACE
-# ----------------------------------------------------------------------
-class TraceSink:
-    def record(self, traceId: str, span: Dict[str, Any]) -> None:
+    @abstractmethod
+    def record(self, span: TraceSpan) -> None:
+        """
+        Persist or export a single trace span.
+        """
         raise NotImplementedError
 
     def get_spans(self) -> List[TraceSpan]:
-        raise NotImplementedError
+        """
+        Optional: return all spans if the implementation is span-backed.
 
-    def get_trace(self, traceId: str) -> List[TraceSpan]:
-        raise NotImplementedError
+        The default implementation raises to signal that not all sinks
+        need to support retrieval (e.g., OTEL-only).
+        """
+        raise NotImplementedError("This TraceSink does not support get_spans()")
 
-    def clear(self) -> None:
-        raise NotImplementedError
 
-
-# ----------------------------------------------------------------------
-# INTENTUSNET TRACER (REAL IMPLEMENTATION)
-# ----------------------------------------------------------------------
-class IntentusNetTracer(TraceSink):
+class InMemoryTraceSink(TraceSink):
     """
-    Simple in-memory tracer compatible with TraceSink.
-    Stores TraceSpan objects and allows query by traceId.
+    Simple in-memory trace sink.
+
+    Intended for:
+    - local development
+    - unit/integration tests
+    - interactive demos (print a trace table, etc.)
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._spans: List[TraceSpan] = []
 
-    def _now_iso(self) -> str:
-        return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-
-    def record(self, traceId: str, span: Dict[str, Any]) -> None:
-        s = TraceSpan(
-            id=span.get("id", str(uuid.uuid4())),
-            traceId=traceId,
-            name=span.get("name", "unknown"),
-            startTime=span.get("start", self._now_iso()),
-            endTime=span.get("end", self._now_iso()),
-            attributes=span.get("attributes", {}),
-        )
-        self._spans.append(s)
+    def record(self, span: TraceSpan) -> None:
+        self._spans.append(span)
 
     def get_spans(self) -> List[TraceSpan]:
+        # Return a copy to avoid accidental external mutation
         return list(self._spans)
 
-    def get_trace(self, traceId: str) -> List[TraceSpan]:
-        return [s for s in self._spans if s.traceId == traceId]
-
     def clear(self) -> None:
+        """
+        Remove all stored spans.
+        Useful between tests or demo runs.
+        """
         self._spans.clear()
-
-
-# ----------------------------------------------------------------------
-# ALIAS FOR BACKWARD COMPATIBILITY
-# ----------------------------------------------------------------------
-class InMemoryTraceSink(IntentusNetTracer):
-    pass

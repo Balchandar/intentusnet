@@ -2,23 +2,18 @@
 Identity Chain Utilities
 ------------------------
 
-The EMCL identity chain tracks the sequence of agents that touched a payload.
-
-This enables:
-- provenance
-- audit logging
-- secure multi-hop flows
+The EMCL identity chain tracks the sequence of actors that touched a payload.
 """
 
 from __future__ import annotations
-from typing import List
+
+from typing import List, Optional
 
 
-def extend_identity_chain(chain: List[str], identity: str | None) -> List[str]:
+def extend_identity_chain(chain: List[str], identity: Optional[str]) -> List[str]:
     """
-    Appends the calling agent/service identity to the identity chain.
+    Append the current identity to the chain, preserving ordering.
     """
     if identity is None:
         return list(chain)
     return chain + [identity]
-

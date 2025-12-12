@@ -3,14 +3,9 @@ from .core.router import IntentRouter
 from .core.registry import AgentRegistry
 from .core.client import IntentusClient
 from .core.orchestrator import WorkflowDefinition, WorkflowStep, Orchestrator
-from .agents.base import BaseAgent
+from .core.agent import BaseAgent
 from .security.emcl.base import EMCLProvider
-from .protocol.models import (
-    IntentEnvelope,
-    AgentDefinition,
-    AgentResponse,
-    Capability,
-)
+from .protocol import AgentDefinition, Capability, IntentRef, AgentResponse
 
 __all__ = [
     "IntentusRuntime",

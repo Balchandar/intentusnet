@@ -1,54 +1,63 @@
 from __future__ import annotations
+
 import json
 import hmac
 import hashlib
 from typing import Dict, Any
 
-from intentusnet.protocol.models import EMCLEnvelope
+from intentusnet.protocol.emcl import EMCLEnvelope
 from intentusnet.protocol.errors import EMCLValidationError
+from .base import EMCLProvider
 
 
-class SimpleHMACEMCLProvider:
+class SimpleHMACEMCLProvider(EMCLProvider):
     """
-    Lightweight EMCL provider for integrity-only mode.
-    No encryption — plaintext is signed using HMAC-SHA256.
+    Demo EMCL provider:
 
-    Suitable for:
-    - Local development
-    - Debugging
-    - Non-sensitive payloads
+    - Ciphertext is the plaintext JSON (no encryption).
+    - HMAC-SHA256 over nonce + ciphertext for integrity.
+
+    DO NOT use this in production when confidentiality is required.
     """
 
-    def __init__(self, key: str, emcl_version: str = "1.0"):
+    def __init__(self, key: str) -> None:
+        if not key:
+            raise EMCLValidationError("EMCL HMAC key must not be empty")
         self._key = key.encode("utf-8")
-        self._emcl_version = emcl_version
 
     def encrypt(self, body: Dict[str, Any]) -> EMCLEnvelope:
-        plaintext = json.dumps(body, sort_keys=True, separators=(",", ":"))
-        nonce = hashlib.sha256(plaintext.encode("utf-8")).hexdigest()[:32]
+        nonce = hashlib.sha256(str(body).encode("utf-8")).hexdigest()[:16]
 
-        signature = hmac.new(
+        ciphertext = json.dumps(body, separators=(",", ":"), ensure_ascii=False)
+
+        sig = hmac.new(
             self._key,
-            (nonce + plaintext).encode("utf-8"),
+            (nonce + ciphertext).encode("utf-8"),
             hashlib.sha256,
         ).hexdigest()
 
+        # We reuse EMCLEnvelope structure:
+        # - cipherText: JSON string
+        # - iv: nonce
+        # - tag: HMAC signature
         return EMCLEnvelope(
-            emclVersion=self._emcl_version,
-            ciphertext=plaintext,
-            nonce=nonce,
-            hmac=signature,
+            cipherText=ciphertext,
+            iv=nonce,
+            tag=sig,
             identityChain=[],
         )
 
     def decrypt(self, envelope: EMCLEnvelope) -> Dict[str, Any]:
         expected = hmac.new(
             self._key,
-            (envelope.nonce + envelope.ciphertext).encode("utf-8"),
+            (envelope.iv + envelope.cipherText).encode("utf-8"),
             hashlib.sha256,
         ).hexdigest()
 
-        if not hmac.compare_digest(expected, envelope.hmac):
-            raise EMCLValidationError("HMAC signature mismatch")
+        if not hmac.compare_digest(expected, envelope.tag):
+            raise EMCLValidationError("EMCL HMAC validation failed")
 
-        return json.loads(envelope.ciphertext)
+        try:
+            return json.loads(envelope.cipherText)
+        except Exception as e:
+            raise EMCLValidationError(f"EMCL HMAC: invalid ciphertext JSON: {e}")

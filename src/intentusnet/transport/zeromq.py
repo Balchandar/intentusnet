@@ -14,12 +14,9 @@ from typing import Any, Dict, Optional
 
 import zmq
 
-from intentusnet.protocol.models import (
-    IntentEnvelope,
-    AgentResponse,
-    EMCLEnvelope,
-    ErrorInfo,
-)
+from intentusnet.protocol.intent import IntentEnvelope
+from intentusnet.protocol.response import AgentResponse, ErrorInfo
+from intentusnet.protocol.emcl import EMCLEnvelope
 from intentusnet.protocol.enums import ErrorCode
 from intentusnet.security.emcl.base import EMCLProvider
 

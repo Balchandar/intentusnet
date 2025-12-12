@@ -1,103 +1,95 @@
-"""
-AES-GCM EMCL Provider
----------------------
-
-Production-ready AES-256-GCM encryption & decryption for EMCL envelopes.
-
-Features:
-- 256-bit key
-- 96-bit nonce (recommended for GCM)
-- Authenticated encryption (GCM tag)
-- Identity chain support
-- JSON-safe ciphertext (base64)
-"""
-
 from __future__ import annotations
-import base64
+
 import os
-from typing import Dict, Any, List
+import base64
+import json
+from typing import Dict, Any, Optional
 
-from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM  # type: ignore
 
-from intentusnet.protocol.models import EMCLEnvelope
+from intentusnet.protocol.emcl import EMCLEnvelope
 from intentusnet.protocol.errors import EMCLValidationError
-from intentusnet.utils.json import json_dumps, json_loads
-from .identity_chain import extend_identity_chain
+from .base import EMCLProvider
 
 
-class AESGCMEMCLProvider:
+def _json_dumps(obj: Any) -> str:
+    return json.dumps(obj, separators=(",", ":"), ensure_ascii=False)
+
+
+def _json_loads(s: str) -> Any:
+    return json.loads(s)
+
+
+class AESGCMEMCLProvider(EMCLProvider):
     """
-    AES-256-GCM encrypted EMCL provider.
-    Provides:
-    - Confidentiality
-    - Integrity
-    - Authenticated identity chain
+    AES-256-GCM EMCL provider.
+
+    - 256-bit key (32 bytes)
+    - 96-bit nonce (12 bytes)
+    - Authenticated encryption (GCM tag included)
+    - Base64 encoding for JSON-safe transport
     """
 
-    def __init__(
-        self,
-        key: bytes | str,
-        emcl_version: str = "1.0",
-        identity: str | None = None,
-    ):
-        if isinstance(key, str):
-            key = bytes.fromhex(key)  # expect 32-byte hex string
+    def __init__(self, key: str) -> None:
+        if not key:
+            raise EMCLValidationError("EMCL AES-GCM key must not be empty")
 
-        if len(key) != 32:
-            raise ValueError("AES-GCM key must be exactly 32 bytes")
+        # Normalize key to 32 bytes using SHA-256 or direct bytes if already 32
+        raw = key.encode("utf-8")
+        if len(raw) == 32:
+            self._key = raw
+        else:
+            import hashlib
 
-        self._key = key
-        self._aesgcm = AESGCM(key)
-        self._emcl_version = emcl_version
-        self._identity = identity
+            self._key = hashlib.sha256(raw).digest()
 
-    # --- Key Helpers -------------------------------------------------
+        self._aesgcm = AESGCM(self._key)
 
-    @staticmethod
-    def generate_key() -> bytes:
-        return os.urandom(32)
+    # ------------------------------------------------------------------
+    # EMCLProvider implementation
+    # ------------------------------------------------------------------
+    def encrypt(self, body: Dict[str, Any]) -> EMCLEnvelope:
+        try:
+            plaintext = _json_dumps(body).encode("utf-8")
+        except Exception as e:
+            raise EMCLValidationError(f"EMCL AES-GCM: cannot encode body to JSON: {e}")
 
-    @staticmethod
-    def generate_key_hex() -> str:
-        return AESGCMEMCLProvider.generate_key().hex()
+        # 96-bit nonce for GCM
+        nonce = os.urandom(12)
+        aad = b"emcl-aes-gcm"
 
-    # --- Encrypt -----------------------------------------------------
+        try:
+            ct = self._aesgcm.encrypt(nonce, plaintext, aad)
+        except Exception as e:
+            raise EMCLValidationError(f"EMCL AES-GCM encryption failed: {e}")
 
-    def encrypt(self, body: Dict[str, Any], identity_chain: List[str] | None = None) -> EMCLEnvelope:
-        plaintext = json_dumps(body).encode("utf-8")
+        # AESGCM returns ciphertext||tag in ct
+        nonce_b64 = base64.b64encode(nonce).decode("ascii")
+        ct_b64 = base64.b64encode(ct).decode("ascii")
 
-        nonce = os.urandom(12)  # GCM standard: 96-bit nonce
-        aad = b"intentusnet-emcl-aes-gcm"
-
-        ciphertext = self._aesgcm.encrypt(nonce, plaintext, aad)
-
-        new_chain = extend_identity_chain(identity_chain or [], self._identity)
-
+        # For simplicity we treat entire ct as cipherText, no separate tag field
         return EMCLEnvelope(
-            emclVersion=self._emcl_version,
-            ciphertext=base64.b64encode(ciphertext).decode("utf-8"),
-            nonce=base64.b64encode(nonce).decode("utf-8"),
-            hmac="",  # GCM includes integrity tag internally
-            identityChain=new_chain,
+            cipherText=ct_b64,
+            iv=nonce_b64,
+            tag="",  # reserved, not needed when using AESGCM's combined output
+            identityChain=[],
         )
-
-    # --- Decrypt -----------------------------------------------------
 
     def decrypt(self, envelope: EMCLEnvelope) -> Dict[str, Any]:
         try:
-            nonce = base64.b64decode(envelope.nonce)
-            ciphertext = base64.b64decode(envelope.ciphertext)
+            nonce = base64.b64decode(envelope.iv)
+            ciphertext = base64.b64decode(envelope.cipherText)
         except Exception:
-            raise EMCLValidationError("Invalid base64 in EMCL envelope")
+            raise EMCLValidationError("EMCL AES-GCM: invalid base64 values in envelope")
 
-        aad = b"intentusnet-emcl-aes-gcm"
+        aad = b"emcl-aes-gcm"
 
         try:
             plaintext = self._aesgcm.decrypt(nonce, ciphertext, aad)
         except Exception as e:
-            raise EMCLValidationError(f"AES-GCM decryption failed: {e}")
+            raise EMCLValidationError(f"EMCL AES-GCM decryption failed: {e}")
 
         try:
-            return json_loads(plaintext.decode("utf-8"))
+            return _json_loads(plaintext.decode("utf-8"))
         except Exception:
-            raise EMCLValidationError("Decrypted EMCL payload is invalid JSON")
+            raise EMCLValidationError("EMCL AES-GCM: decrypted plaintext is invalid JSON")

@@ -1,118 +1,93 @@
-# FILE: examples/advanced/demo_advanced_research.py
-
 from __future__ import annotations
-import json
+
+import sys
+from typing import Any, Dict
+
 from intentusnet.core.runtime import IntentusRuntime
-from intentusnet.core.tracing import IntentusNetTracer
-from intentusnet.protocol.models import IntentRef
+from intentusnet.core.client import IntentusClient
 
-from examples.advanced.agents.nlu_agent import NLUAgent
-from examples.advanced.agents.research_orchestrator import ResearchOrchestratorAgent
-from examples.advanced.agents.comparison_orchestrator import ComparisonOrchestratorAgent
-from examples.advanced.agents.web_search_agent import WebSearchAgent
-from examples.advanced.agents.alt_search_agent import AltSearchAgent
-from examples.advanced.agents.scraper_agent import ScraperAgent
-from examples.advanced.agents.cleaner_agent import CleanerAgent
-from examples.advanced.agents.summarizer_agent import SummarizerAgent
-from examples.advanced.agents.reasoning_agent import ReasoningAgent
-from examples.advanced.agents.action_agent import ActionAgent
+# Import agents
+from .agents.nlu_agent import NLUAgent
+from .agents.research_orchestrator import ResearchOrchestratorAgent
+from .agents.comparison_orchestrator import ComparisonOrchestratorAgent
+from .agents.web_search_agent import WebSearchAgent
+from .agents.alt_search_agent import AltSearchAgent
+from .agents.scraper_agent import ScraperAgent
+from .agents.cleaner_agent import CleanerAgent
+from .agents.summarizer_agent import SummarizerAgent
+from .agents.reasoning_agent import ReasoningAgent
+from .agents.action_agent import ActionAgent
 
-
-def ask_user(prompt):
-    return input(prompt).strip()
 
 def register_all(runtime: IntentusRuntime):
-# REGISTER EXECUTION AGENTS FIRST
-    runtime.register_agent(WebSearchAgent)
-    runtime.register_agent(AltSearchAgent)
-    runtime.register_agent(ScraperAgent)
-    runtime.register_agent(CleanerAgent)
-    runtime.register_agent(SummarizerAgent)
-    runtime.register_agent(ReasoningAgent)
-    runtime.register_agent(ActionAgent)
+    """Register all agents required by the advanced demo."""
+    runtime.register_agent(lambda router: NLUAgent(router))
+    runtime.register_agent(lambda router: WebSearchAgent(router))
+    runtime.register_agent(lambda router: AltSearchAgent(router))
+    runtime.register_agent(lambda router: ScraperAgent(router))
+    runtime.register_agent(lambda router: CleanerAgent(router))
+    runtime.register_agent(lambda router: SummarizerAgent(router))
+    runtime.register_agent(lambda router: ReasoningAgent(router))
+    runtime.register_agent(lambda router: ActionAgent(router))
 
-    # REGISTER ORCHESTRATORS
-    runtime.register_agent(ResearchOrchestratorAgent)
-    runtime.register_agent(ComparisonOrchestratorAgent)
+    # Orchestrators
+    runtime.register_agent(lambda router: ResearchOrchestratorAgent(router))
+    runtime.register_agent(lambda router: ComparisonOrchestratorAgent(router))
 
-    # REGISTER NLU LAST (IMPORTANT)
-    runtime.register_agent(NLUAgent)
 
+def print_trace(runtime: IntentusRuntime):
+    spans = runtime.trace_sink.get_spans()
+    print("\n=== TRACE LOG ===")
+    print(f"{'Agent':20} {'Intent':20} {'Latency(ms)':12} {'Status':10} {'Error'}")
+    for span in spans:
+        err = span.error or ""
+        print(
+            f"{span.agent:20} {span.intent:20} {span.latencyMs:12.2f} "
+            f"{span.status:10} {err}"
+        )
+    print("\n")
 
 
 def run_demo():
     runtime = IntentusRuntime()
-    
     register_all(runtime)
 
-    client = runtime.client()
+    client: IntentusClient = runtime.client()
 
-    print("=== IntentusNet Advanced Demo ===")
+    print("=== IntentusNet Advanced Research Demo ===")
 
     while True:
-        print("\n1. Research a topic")
-        print("2. Compare two topics")
-        print("3. Deep-dive research")
-        print("4. Show trace log")
-        print("5. Exit")
-
-        choice = ask_user("> ")
+        print(
+            "\nMenu:\n"
+            "1. Research a topic\n"
+            "2. Compare two topics\n"
+            "3. Show trace log\n"
+            "4. Exit\n"
+        )
+        choice = input("> ").strip()
 
         if choice == "1":
-            text = ask_user("Enter topic: ")
-
-            # ---- Stage 1: NLU ----
-            nlu_resp = client.send_intent("ParseIntent", {"query": text})
-            if nlu_resp.status == "error":
-                print("NLU error:", nlu_resp.error.message)
-                continue
-
-            predicted_intent = nlu_resp.payload["intent"]
-            arguments = nlu_resp.payload.get("arguments", {})
-
-            print("\nNLU → Predicted intent:", predicted_intent)
-            
-            # ---- Stage 2: Execute ResearchIntent ----
-            resp = client.send_intent(predicted_intent, arguments)
-
+            topic = input("Enter topic: ").strip()
+            response = client.send_intent("ResearchIntent", {"topic": topic})
             print("\n==== RESULT ====")
-            print(resp.payload)
+            print(response.payload)
 
         elif choice == "2":
-            t1 = ask_user("Topic A: ")
-            t2 = ask_user("Topic B: ")
-            nlu_resp = client.send_intent("ParseIntent", {"query": f"compare {t1} and {t2}"})
-            predicted = nlu_resp.payload["intent"]
-            args = nlu_resp.payload.get("arguments", {})
-            print(predicted)
-            resp = client.send_intent(predicted, args)
+            a = input("Enter first topic: ").strip()
+            b = input("Enter second topic: ").strip()
+            response = client.send_intent("CompareIntent", {"a": a, "b": b})
             print("\n==== RESULT ====")
-            print(resp.payload)
+            print(response.payload)
 
         elif choice == "3":
-            topic = ask_user("Deep dive into: ")
-
-            nlu_resp = client.send_intent("ParseIntent", {"query": topic})
-            predicted = nlu_resp.payload["intent"]
-            args = nlu_resp.payload.get("arguments", {})
-            print(predicted)
-            resp = client.send_intent(predicted, args)
-            print("\n==== RESULT ====")
-            print(resp.payload)
+            print_trace(runtime)
 
         elif choice == "4":
-            print("\n=== TRACE LOG ===")
-            for span in runtime.trace_sink.export():
-                print(
-                    f"{span.agent:20} {span.intent:20} "
-                    f"{span.latencyMs:8}ms  {span.status}"
-                )
+            print("Goodbye!")
+            sys.exit(0)
 
-        elif choice == "5":
-            break
         else:
-            print("Invalid choice!")
-
+            print("Invalid option.")
 
 if __name__ == "__main__":
     run_demo()

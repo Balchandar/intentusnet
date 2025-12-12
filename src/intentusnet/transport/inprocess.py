@@ -1,7 +1,7 @@
 from __future__ import annotations
 from typing import Protocol
 
-from intentusnet.protocol.models import IntentEnvelope, AgentResponse
+from intentusnet.protocol import IntentEnvelope, AgentResponse
 from intentusnet.core.router import IntentRouter
 
 

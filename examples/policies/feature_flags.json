@@ -1,0 +1,26 @@
+{
+  "default": "deny",
+  "rules": [
+    {
+      "id": "enable-advanced-search",
+      "action": "allow",
+      "roles": ["beta-user", "admin"],
+      "intents": ["DeepSearchIntent"],
+      "description": "Only admins & beta testers can use DeepSearch"
+    },
+    {
+      "id": "enable-web-browsing",
+      "action": "allow",
+      "roles": ["premium-user", "admin"],
+      "intents": ["WebSearchIntent", "ExtractIntent"],
+      "description": "Premium users get browsing support"
+    },
+    {
+      "id": "default-premium-user-intents",
+      "action": "allow",
+      "roles": ["premium-user"],
+      "intents": ["ResearchIntent", "SummarizeIntent"],
+      "description": "Premium users get basic research abilities"
+    }
+  ]
+}

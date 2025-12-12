@@ -1,19 +1,21 @@
-from typing import Optional
-from .enums import ErrorCode
+from __future__ import annotations
 
 
 class IntentusError(Exception):
-    def __init__(self, message: str, code: Optional[ErrorCode] = None):
-        super().__init__(message)
-        self.code = code or ErrorCode.INTERNAL_ERROR
+    """Base IntentusNet error."""
 
 
 class RoutingError(IntentusError):
-     """Raised when routing fails."""
+    """Routing or registry failure."""
 
 
-class ValidationError(IntentusError):
-    """Raised when Validation fails."""
+class AgentError(IntentusError):
+    """Agent execution failure."""
+
 
 class EMCLValidationError(IntentusError):
-    """Raised when EMCL envelope validation or decryption fails."""
+    """EMCL envelope validation or crypto failure."""
+
+
+class JWTAuthError(IntentusError):
+    """JWT authentication or validation failure."""
