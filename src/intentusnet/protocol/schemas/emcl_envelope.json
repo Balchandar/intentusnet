@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "EMCL Envelope",
+  "description": "Encrypted Message Context Layer envelope used by IntentusNet transports.",
+  "type": "object",
+  "required": ["emclVersion", "ciphertext", "nonce", "hmac", "identityChain"],
+
+  "properties": {
+    "emclVersion": {
+      "type": "string",
+      "description": "Semantic version of the EMCL protocol implementation (e.g. '1.0')."
+    },
+
+    "ciphertext": {
+      "type": "string",
+      "description": "Base64-encoded AES-GCM ciphertext OR plaintext string for HMAC mode."
+    },
+
+    "nonce": {
+      "type": "string",
+      "description": "Base64-encoded AES-GCM nonce OR hashed nonce for HMAC mode."
+    },
+
+    "hmac": {
+      "type": "string",
+      "description": "HMAC signature for integrity in HMAC mode. Empty string for AES-GCM.",
+      "minLength": 0
+    },
+
+    "identityChain": {
+      "type": "array",
+      "description": "Chain of agent/service identities that processed this envelope.",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+
+  "additionalProperties": false
+}

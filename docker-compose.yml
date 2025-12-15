@@ -1,0 +1,17 @@
+services:
+  intentusnet-api:
+    container_name: intentusnet-api
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      PYTHONUNBUFFERED: "1"
+      INTENTUSNET_EMCL_ENABLED: "false"
+    networks:
+      - intentusnet
+    tty: true
+    stdin_open: false 
+
+networks:
+  intentusnet:
+    driver: bridge
