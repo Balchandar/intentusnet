@@ -12,7 +12,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# Metadata for dependency resolver
+# Copy metadata first (better caching)
 COPY pyproject.toml .
 COPY README.md .
 COPY LICENSE .
@@ -21,7 +21,7 @@ RUN pip install --upgrade pip setuptools wheel
 RUN pip install --prefix=/install .
 
 ##############################################
-# Stage 2 — Runtime Image
+# Stage 2 — Runtime image
 ##############################################
 FROM python:3.11-slim AS runtime
 
@@ -29,18 +29,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libzmq3-dev \
     && rm -rf /var/lib/apt/lists/*
 
+# Install Python deps
 COPY --from=builder /install /usr/local
 
 WORKDIR /app
 
-# Copy source and examples
+# Copy source code and demos
 COPY src /app/src
 COPY examples /app/examples
 
-# Critical: make both src/ and examples/ importable
+# Make both src/ and examples/ importable
 ENV PYTHONPATH="/app/src:/app"
 
 ##############################################
-# Default Command (FastAPI)
+# Default command — advanced demo (CLI)
 ##############################################
-CMD ["uvicorn", "examples.advanced.web_server:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["python", "examples/advanced/demo_advanced_research.py"]

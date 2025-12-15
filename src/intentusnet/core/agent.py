@@ -5,6 +5,9 @@ from typing import Dict, Any, Optional, List, TYPE_CHECKING
 import uuid
 import datetime as dt
 
+from intentusnet.utils.id_generator import generate_uuid
+from intentusnet.utils.timestamps import now_iso
+
 from ..protocol import (
     IntentEnvelope,
     IntentRef,
@@ -25,12 +28,6 @@ if TYPE_CHECKING:
 class BaseAgent(ABC):
     """
     Base class for all Intentus agents.
-
-    Responsibilities:
-    - Hold its own AgentDefinition (identity, capabilities, runtime info)
-    - Implement handle_intent() to process an IntentEnvelope
-    - Provide emit_intent() helper to call other agents via the router
-    - Provide error() helper to create structured ErrorInfo objects
     """
 
     def __init__(
@@ -43,23 +40,41 @@ class BaseAgent(ABC):
         self.router = router
         self.emcl = emcl
 
-    # ------------------------------------------------------------------
-    # Core contract
-    # ------------------------------------------------------------------
+    # ==========================================================
+    # Router-facing entrypoint
+    # ==========================================================
+    def handle(self, env: IntentEnvelope) -> AgentResponse:
+        # Ensure traceId exists
+        if not env.metadata.traceId:
+            env.metadata.traceId = str(uuid.uuid4())
 
+        # Track routing path (NOT metadata mutation)
+        env.routingMetadata.decisionPath.append(self.definition.name)
+
+        try:
+            response = self.handle_intent(env)
+        except Exception as ex:
+            return AgentResponse.failure(
+                self.error(str(ex)),
+                agent=self.definition.name,
+                trace_id=env.metadata.traceId,
+            )
+
+        response.metadata.setdefault("agent", self.definition.name)
+        response.metadata.setdefault("traceId", env.metadata.traceId)
+        response.metadata.setdefault("timestamp", now_iso())
+        return response
+
+    # ==========================================================
+    # Agent business logic
+    # ==========================================================
     @abstractmethod
     def handle_intent(self, env: IntentEnvelope) -> AgentResponse:
-        """
-        Process an incoming IntentEnvelope and return an AgentResponse.
-
-        Concrete agents MUST implement this method.
-        """
         raise NotImplementedError
 
-    # ------------------------------------------------------------------
-    # Downstream intent emission (agent -> router -> other agents)
-    # ------------------------------------------------------------------
-
+    # ==========================================================
+    # Downstream intent emission
+    # ==========================================================
     def emit_intent(
         self,
         intent_name: str,
@@ -69,44 +84,33 @@ class BaseAgent(ABC):
         tags: Optional[List[str]] = None,
         routing: Optional[RoutingOptions] = None,
     ) -> AgentResponse:
-        """
-        Emit a new intent to the router from within this agent.
 
-        This is the standard way for orchestrator / composite agents
-        to call downstream capabilities.
-        """
-        now = dt.datetime.utcnow().isoformat() + "Z"
-
-        meta = IntentMetadata(
-            requestId=str(uuid.uuid4()),
-            source=self.definition.name,
-            createdAt=now,
-            traceId=str(uuid.uuid4()),
-        )
-
-        ctx = IntentContext(
-            sourceAgent=self.definition.name,
-            timestamp=now,
-            priority=priority,
-            tags=tags or [],
-        )
-
+        now = now_iso()
         env = IntentEnvelope(
             version="1.0",
             intent=IntentRef(name=intent_name, version="1.0"),
             payload=payload,
-            context=ctx,
-            metadata=meta,
+            context=IntentContext(
+                sourceAgent=self.definition.name,
+                timestamp=now,
+                priority=priority,
+                tags=list(tags or []),
+            ),
+            metadata=IntentMetadata(
+                requestId=str(generate_uuid()),
+                source=self.definition.name,
+                createdAt=now,
+                traceId=str(generate_uuid()),
+            ),
             routing=routing or RoutingOptions(),
             routingMetadata=RoutingMetadata(),
         )
 
         return self.router.route_intent(env)
 
-    # ------------------------------------------------------------------
+    # ==========================================================
     # Error helper
-    # ------------------------------------------------------------------
-
+    # ==========================================================
     def error(
         self,
         message: str,
@@ -115,18 +119,6 @@ class BaseAgent(ABC):
         retryable: bool = False,
         details: Optional[Dict[str, Any]] = None,
     ) -> ErrorInfo:
-        """
-        Convenience helper to construct a structured ErrorInfo.
-
-        Typical usage in agents:
-
-            if not topic:
-                return AgentResponse.failure(
-                    self.error("missing topic"),
-                    agent=self.definition.name,
-                    trace_id=env.metadata.traceId,
-                )
-        """
         return ErrorInfo(
             code=code,
             message=message,

@@ -29,11 +29,15 @@ class Telemetry:
 
     def __init__(self) -> None:
         self._settings = get_settings()
-        self._backend = (self._settings.runtime.trace_sink or "memory").lower()
-        self._log = logger
 
-        # Lazy OTEL initialization could go here later
-        self._otel_available = False
+        # NOTE: this is telemetry backend, NOT router trace sink
+        self._backend = (
+            getattr(self._settings.runtime, "telemetry_backend", None)
+            or getattr(self._settings.runtime, "trace_sink", "memory")
+        ).lower()
+
+        self._log = logger
+        self._otel_available = False  # future
 
     # --------------------------------------------------------------
     # Metrics
@@ -51,15 +55,11 @@ class Telemetry:
     ) -> None:
         """
         Record a single routing/agent request metric.
-
-        For now:
-          - if trace_sink == 'stdout' or 'stdout-json' -> log a metrics line
-          - future: emit to OpenTelemetry meter
         """
         if self._backend in ("stdout", "stdout-json"):
             self._log.info(
-                "metrics.intent_request",
-                extra={
+                "metrics.intent_request %s",
+                {
                     "intent": intent,
                     "agent": agent,
                     "success": success,
@@ -70,21 +70,17 @@ class Telemetry:
                 },
             )
         else:
-            # In-memory / no-op baseline (could attach to TraceSink or Prometheus later)
+            # No-op baseline for v1
             pass
 
     # --------------------------------------------------------------
     # Tracing hook (optional)
     # --------------------------------------------------------------
     def record_span(self, span: TelemetrySpan) -> None:
-        """
-        Basic span hook – in a real OTEL integration this would translate
-        to a started/ended span. For now we just log if configured.
-        """
         if self._backend in ("stdout", "stdout-json"):
             self._log.debug(
-                "trace.span",
-                extra={
+                "trace.span %s",
+                {
                     "trace_id": span.trace_id,
                     "intent": span.intent,
                     "agent": span.agent,
@@ -94,7 +90,6 @@ class Telemetry:
                 },
             )
         else:
-            # No-op by default; we already have TraceSink + TraceSpan
             pass
 
 

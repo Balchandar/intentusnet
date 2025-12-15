@@ -1,82 +1,76 @@
-# intentusnet/adapters/mcp_adapter.py
-
 from __future__ import annotations
 from typing import Any, Dict, Optional
-from ..protocol import (
-    IntentEnvelope,
-    IntentMetadata,
-    IntentContext,
-    RoutingOptions,
-    RoutingMetadata,
-    IntentRef,
-    AgentResponse,
-    ErrorInfo
-)
 
-from intentusnet.utils import new_id
-from intentusnet.core.router import IntentRouter
-from intentusnet.security.emcl.base import EMCLProvider
+from intentusnet.core.client import IntentusClient
+from intentusnet.protocol.response import AgentResponse, ErrorInfo
+from intentusnet.protocol.enums import ErrorCode
 
 
 class MCPAdapter:
+    """
+    Adapter between MCP-style tool calls and IntentusNet v1.
 
-    def __init__(self, router: IntentRouter, *, emcl: Optional[EMCLProvider] = None):
-        self._router = router
-        self._emcl = emcl
+    This adapter:
+    - does NOT touch router directly
+    - does NOT invent metadata
+    - uses IntentusClient as the official entry point
+    """
 
-    # ----------------------------------------------------------------------
-    def _to_intent_envelope(self, req: Dict[str, Any]) -> IntentEnvelope:
-        name = req["name"]
-        args = req.get("arguments", {})
+    def __init__(self, client: IntentusClient):
+        self._client = client
 
-        if self._emcl:
-            args = {"__emcl__": self._emcl.wrap(args)}
+    # --------------------------------------------------
+    # MCP → Intentus
+    # --------------------------------------------------
+    def handle_mcp_request(self, req: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        MCP request shape (assumed):
+        {
+          "name": "SearchIntent",
+          "arguments": { ... }
+        }
+        """
 
-        metadata = IntentMetadata(
-            traceId=new_id(),
-            requestId=new_id(),
-            identityChain=["mcp-adapter"],
+        intent_name = req.get("name")
+        arguments = req.get("arguments", {}) or {}
+
+        if not intent_name:
+            return self._mcp_error(
+                ErrorInfo(
+                    code=ErrorCode.VALIDATION_ERROR,
+                    message="Missing MCP field: name",
+                    retryable=False,
+                    details={},
+                )
+            )
+
+        # Call IntentusNet through the OFFICIAL client
+        response: AgentResponse = self._client.send_intent(
+            intent_name=intent_name,
+            payload=arguments,
         )
 
-        context = IntentContext(
-            sessionId=new_id(),
-            workflowId=new_id(),
-        )
+        return self._to_mcp_response(response)
 
-        routing = RoutingOptions()  # default
-
-        return IntentEnvelope(
-            intent=IntentRef(name=name),
-            payload=args,
-            metadata=metadata,
-            context=context,
-            routing=routing,
-            routingMetadata=RoutingMetadata(),
-        )
-
-    # ----------------------------------------------------------------------
+    # --------------------------------------------------
+    # Intentus → MCP
+    # --------------------------------------------------
     def _to_mcp_response(self, resp: AgentResponse) -> Dict[str, Any]:
-
-        payload = resp.payload
-        if payload and "__emcl__" in payload and self._emcl:
-            payload = self._emcl.unwrap(payload["__emcl__"])
-
         if resp.error is None:
-            return {"result": payload, "error": None}
+            return {
+                "result": resp.payload,
+                "error": None,
+            }
 
-        err: ErrorInfo = resp.error
+        err = resp.error
+        return self._mcp_error(err)
 
+    def _mcp_error(self, err: ErrorInfo) -> Dict[str, Any]:
         return {
             "result": None,
             "error": {
                 "code": err.code.value,
                 "message": err.message,
-                "details": err.details,
+                "details": err.details or {},
             },
         }
-
-    # ----------------------------------------------------------------------
-    def handle_mcp_request(self, req: Dict[str, Any]) -> Dict[str, Any]:
-        env = self._to_intent_envelope(req)
-        resp = self._router.route(env)
-        return self._to_mcp_response(resp)

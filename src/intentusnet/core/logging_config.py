@@ -11,9 +11,6 @@ from .settings import get_settings
 class JsonLogFormatter(logging.Formatter):
     """
     Very simple JSON log formatter.
-
-    Produces log lines like:
-    {"level":"INFO","name":"intentusnet.router","msg":"...","extra":{...}}
     """
 
     def format(self, record: logging.LogRecord) -> str:
@@ -23,19 +20,22 @@ class JsonLogFormatter(logging.Formatter):
             "message": record.getMessage(),
         }
 
-        # Include extra attributes if present
         for key, value in record.__dict__.items():
             if key.startswith("_"):
                 continue
-            if key in ("args", "msg", "levelname", "levelno", "exc_info", "exc_text", "stack_info", "created", "msecs",
-                       "relativeCreated", "thread", "threadName", "processName", "process", "name"):
+            if key in (
+                "args", "msg", "levelname", "levelno", "exc_info", "exc_text",
+                "stack_info", "created", "msecs", "relativeCreated",
+                "thread", "threadName", "processName", "process", "name"
+            ):
                 continue
             base[key] = value
 
         if record.exc_info:
             base["exc_info"] = self.formatException(record.exc_info)
 
-        return json.dumps(base, ensure_ascii=False)
+        # IMPORTANT: default=str prevents logging crashes
+        return json.dumps(base, ensure_ascii=False, default=str)
 
 
 def configure_logging(explicit_level: Optional[str] = None) -> None:

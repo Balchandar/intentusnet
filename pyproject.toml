@@ -1,7 +1,7 @@
 [project]
 name = "intentusnet"
 version = "0.3.0"
-description = "IntentusNet — Open, secure, multi-agent runtime with EMCL encryption, routing, fallback, workflows, and transports."
+description = "IntentusNet — Open, secure, multi-agent runtime with deterministic routing, fallback, and transport abstraction."
 readme = "README.md"
 requires-python = ">=3.9"
 license = { file = "LICENSE" }
@@ -11,8 +11,12 @@ authors = [
 ]
 
 keywords = [
-  "agents", "router", "emcl", "encryption",
-  "workflow", "runtime", "mcp", "intent-routing",
+  "agents",
+  "router",
+  "intent-routing",
+  "runtime",
+  "mcp",
+  "distributed-agents"
 ]
 
 classifiers = [
@@ -22,18 +26,14 @@ classifiers = [
 ]
 
 dependencies = [
-  # --- CORE DEPENDENCIES ---
-  "pydantic>=2.0",
-  "typing-extensions>=4.5.0",
-
-  # --- SECURITY: AES-GCM / HMAC ---
+  # --- SECURITY ---
   "cryptography>=42.0.0",
 
   # --- TRANSPORTS ---
   "websockets>=12.0",
   "pyzmq>=25.1.0",
 
-  # --- OPTIONAL WEB MODE ---
+  # --- OPTIONAL HTTP GATEWAY ---
   "fastapi>=0.110.0",
   "uvicorn>=0.29.0",
 

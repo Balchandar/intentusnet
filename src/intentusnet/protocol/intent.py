@@ -28,13 +28,13 @@ class IntentMetadata:
     source: str
     createdAt: str
     traceId: str
-
+    identityChain: List[str] = field(default_factory=list)
 
 @dataclass
 class RoutingOptions:
     strategy: RoutingStrategy = RoutingStrategy.DIRECT
-    targetAgent: Optional[str]
-    fallbackAgents: List[str]
+    targetAgent: Optional[str] = None
+    fallbackAgents: List[str] = field(default_factory=list)
 
 
 
@@ -55,4 +55,4 @@ class IntentEnvelope:
     context: IntentContext
     metadata: IntentMetadata
     routing: RoutingOptions = field(default_factory=RoutingOptions)
-    metadata: IntentMetadata = field(default_factory=IntentMetadata)
+    routingMetadata: RoutingMetadata = field(default_factory=RoutingMetadata)

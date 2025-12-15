@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import logging
-from typing import Protocol, runtime_checkable, Optional
+import time
+from typing import Protocol, runtime_checkable, Optional, Any
 
-from intentusnet.protocol.intent import IntentEnvelope
-from intentusnet.protocol.response import AgentResponse, ErrorInfo
+from ..protocol.intent import IntentEnvelope
+from ..protocol.response import AgentResponse, ErrorInfo
 from .telemetry import get_telemetry
 
 
@@ -82,22 +83,28 @@ class MetricsRouterMiddleware:
 
     Emits:
       - metrics.intent_request (via Telemetry.record_request)
-      - optional span record (via Telemetry.record_span)
 
-    This is transport-agnostic: works for HTTP, ZMQ, in-process, etc.
+    NOTE (v1):
+    - We compute latency here using perf_counter because AgentResponse.metadata
+      does not reliably contain latencyMs (router logs spans separately).
     """
+
+    _START_KEY = "_intentusnet_start_perf"  # internal marker key
 
     def __init__(self) -> None:
         self._telemetry = get_telemetry()
 
     def before_route(self, env: IntentEnvelope) -> None:
-        # No-op for now; could start a live span if we integrate real OTEL here
-        pass
+        # Store start time on env.metadata (safe; it's already a dataclass in your model)
+        setattr(env.metadata, self._START_KEY, time.perf_counter())
 
     def after_route(self, env: IntentEnvelope, response: AgentResponse) -> None:
         trace_id = getattr(env.metadata, "traceId", None)
         agent = response.metadata.get("agent", "unknown")
-        latency_ms = int(response.metadata.get("latencyMs", 0))  # router already logs spans; we can fuse later
+
+        start = getattr(env.metadata, self._START_KEY, None)
+        latency_ms = int((time.perf_counter() - start) * 1000) if isinstance(start, (int, float)) else 0
+
         tenant = self._extract_tenant(env)
         subject = self._extract_subject(env)
 
@@ -111,22 +118,12 @@ class MetricsRouterMiddleware:
             error_code=(response.error.code if response.error else None),
         )
 
-        # Optional span logging
-        # (we can later feed TraceSpan into Telemetry.record_span instead of duplicating)
-        # from .telemetry import TelemetrySpan
-        # self._telemetry.record_span(
-        #     TelemetrySpan(
-        #         trace_id=trace_id or "",
-        #         intent=env.intent.name,
-        #         agent=agent,
-        #         latency_ms=latency_ms,
-        #         success=(response.error is None),
-        #         error_code=(response.error.code if response.error else None),
-        #     )
-        # )
+        # Optional: attach latency for downstream callers (useful in demos)
+        response.metadata.setdefault("latencyMs", latency_ms)
+        if trace_id:
+            response.metadata.setdefault("traceId", trace_id)
 
     def on_error(self, env: IntentEnvelope, error: ErrorInfo) -> None:
-        trace_id = getattr(env.metadata, "traceId", None)
         agent = "router"
         tenant = self._extract_tenant(env)
         subject = self._extract_subject(env)
@@ -143,14 +140,14 @@ class MetricsRouterMiddleware:
 
     @staticmethod
     def _extract_tenant(env: IntentEnvelope) -> Optional[str]:
-        caller = getattr(env.metadata, "caller", None)
+        caller: Any = getattr(env.metadata, "caller", None)
         if isinstance(caller, dict):
             return caller.get("tenant")
         return None
 
     @staticmethod
     def _extract_subject(env: IntentEnvelope) -> Optional[str]:
-        caller = getattr(env.metadata, "caller", None)
+        caller: Any = getattr(env.metadata, "caller", None)
         if isinstance(caller, dict):
             return caller.get("sub")
         return None

@@ -48,6 +48,10 @@ class AgentRegistry:
         name = agent.definition.name
         if name in self._agents:
             raise ValueError(f"Agent '{name}' is already registered")
+
+        if not agent.definition.capabilities:
+            raise ValueError(f"Agent '{name}' has no capabilities")
+
         self._agents[name] = agent
 
     # ------------------------------------------------------------------

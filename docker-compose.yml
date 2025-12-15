@@ -4,16 +4,13 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    command: uvicorn examples.advanced.web_server:app --host 0.0.0.0 --port 8000
-    ports:
-      - "8000:8000"
     environment:
       PYTHONUNBUFFERED: "1"
-      INTENTUSNET_EMCL_ENABLED: "true"
-      INTENTUSNET_EMCL_MODE: "aes-gcm"
-      INTENTUSNET_EMCL_KEY: "${INTENTUSNET_EMCL_KEY}"
+      INTENTUSNET_EMCL_ENABLED: "false"
     networks:
       - intentusnet
+    tty: true
+    stdin_open: false 
 
 networks:
   intentusnet:

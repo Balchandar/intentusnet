@@ -5,8 +5,8 @@ Base transport interface for all IntentusNet transports.
 
 This defines the transport boundary:
 
-    IntentEnvelope  → [TransportEnvelope] → remote node
-    remote node     → [TransportEnvelope] → AgentResponse
+    IntentEnvelope  → TransportEnvelope → remote node
+    remote node     → TransportEnvelope → AgentResponse
 
 Transports DO NOT:
   - interpret intents
@@ -24,72 +24,63 @@ Everything else is handled by:
   - runtime
   - router
   - gateway
-  - security layers (JWT/EMCL)
+  - security layers (JWT / EMCL)
 """
 
-from abc import ABC, abstractmethod
-from typing import Any, Dict, Optional
+from typing import Protocol
 
 from intentusnet.protocol.intent import IntentEnvelope
 from intentusnet.protocol.response import AgentResponse
 from intentusnet.protocol.transport import TransportEnvelope
 
 
-class Transport(ABC):
+class Transport(Protocol):
     """
-    Abstract base class for all transports.
+    Transport interface for IntentusNet.
 
-    Implicit contract:
-        Client side:
-            - send_intent(env) → AgentResponse
-            - internally: env → TransportEnvelope → wire → TransportEnvelope → AgentResponse
+    Implementations may include:
+      - In-process transport
+      - HTTP transport
+      - WebSocket transport
+      - ZeroMQ transport
+      - MCP adapter transport
 
-        Server side:
-            - your gateway (HTTP/ZMQ/WS) receives a TransportEnvelope JSON
-            - parses messageType/body
-            - uses runtime.router to produce AgentResponse
-            - emits TransportEnvelope(response)
+    This is a *capability interface* (Protocol), not a base class.
     """
 
-    # ----------------------------------------------------------------------
-    # HIGH-LEVEL API (public)
-    # ----------------------------------------------------------------------
-    @abstractmethod
+    # ------------------------------------------------------------------
+    # HIGH-LEVEL API (required)
+    # ------------------------------------------------------------------
     def send_intent(self, env: IntentEnvelope) -> AgentResponse:
         """
-        Send a business-level IntentEnvelope over this transport and return
-        the resulting AgentResponse.
+        Send a business-level IntentEnvelope over this transport
+        and return the resulting AgentResponse.
 
-        Every concrete transport MUST implement this method.
+        Required for all transports.
 
-        Pattern:
-            env → TransportEnvelope(messageType='intent'|'emcl', body=env_dict)
-                → JSON → wire → JSON → TransportEnvelope(messageType='response')
-                → AgentResponse
+        Typical flow:
+            IntentEnvelope
+              → TransportEnvelope(messageType="intent" | "emcl")
+              → wire (JSON / binary)
+              → TransportEnvelope(messageType="response")
+              → AgentResponse
         """
-        raise NotImplementedError
+        ...
 
-    # ----------------------------------------------------------------------
-    # LOW-LEVEL OPTIONAL API
-    # ----------------------------------------------------------------------
+    # ------------------------------------------------------------------
+    # LOW-LEVEL API (optional)
+    # ------------------------------------------------------------------
     def send_frame(self, frame: TransportEnvelope) -> TransportEnvelope:
         """
-        Optional low-level raw API.
+        Optional low-level raw transport API.
 
-        In many transports (HTTP remote agent, ZMQ, WS), this is useful.
-        Default implementation raises, so subclasses override only if needed.
+        Useful for:
+          - RemoteAgentProxy
+          - Gateways
+          - EMCL-wrapped frames
+          - Custom protocol adapters (e.g., MCP)
 
-        For example, RemoteAgentProxy will build its own TransportEnvelope
-        containing:
-            {
-              protocol: "INTENTUSNET/1.0",
-              messageType: "intent" | "emcl",
-              headers: {...},
-              body: { agent, envelope }
-            }
-
-        and then call transport.send_frame(frame).
+        Implementations MAY raise NotImplementedError
+        if they only support send_intent().
         """
-        raise NotImplementedError(
-            f"{self.__class__.__name__}.send_frame() not implemented"
-        )
+        ...

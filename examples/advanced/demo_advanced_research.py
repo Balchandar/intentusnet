@@ -7,16 +7,17 @@ from intentusnet.core.runtime import IntentusRuntime
 from intentusnet.core.client import IntentusClient
 
 # Import agents
-from .agents.nlu_agent import NLUAgent
-from .agents.research_orchestrator import ResearchOrchestratorAgent
-from .agents.comparison_orchestrator import ComparisonOrchestratorAgent
-from .agents.web_search_agent import WebSearchAgent
-from .agents.alt_search_agent import AltSearchAgent
-from .agents.scraper_agent import ScraperAgent
-from .agents.cleaner_agent import CleanerAgent
-from .agents.summarizer_agent import SummarizerAgent
-from .agents.reasoning_agent import ReasoningAgent
-from .agents.action_agent import ActionAgent
+from examples.advanced.agents.nlu_agent import NLUAgent
+from examples.advanced.agents.research_orchestrator import ResearchOrchestratorAgent
+from examples.advanced.agents.comparison_orchestrator import ComparisonOrchestratorAgent
+from examples.advanced.agents.web_search_agent import WebSearchAgent
+from examples.advanced.agents.alt_search_agent import AltSearchAgent
+from examples.advanced.agents.scraper_agent import ScraperAgent
+from examples.advanced.agents.cleaner_agent import CleanerAgent
+from examples.advanced.agents.summarizer_agent import SummarizerAgent
+from examples.advanced.agents.reasoning_agent import ReasoningAgent
+from examples.advanced.agents.action_agent import ActionAgent
+
 
 
 def register_all(runtime: IntentusRuntime):

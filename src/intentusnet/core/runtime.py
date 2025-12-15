@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from typing import Optional, Callable
+from typing import Optional, Callable, Sequence
+
+from intentusnet.core.middleware import RouterMiddleware
 
 from ..security.emcl.base import EMCLProvider
 from .registry import AgentRegistry
@@ -33,17 +35,24 @@ class IntentusRuntime:
         trace_sink: Optional[TraceSink] = None,
         transport: Optional[Transport] = None,
         emcl_provider: Optional[EMCLProvider] = None,
+        middlewares: Optional[Sequence[RouterMiddleware]] = None,
     ) -> None:
-        # Core components
         self.registry: AgentRegistry = registry or AgentRegistry()
         self.trace_sink: TraceSink = trace_sink or InMemoryTraceSink()
-        self.router: IntentRouter = IntentRouter(self.registry, trace_sink=self.trace_sink)
 
-        # Optional EMCL provider; used primarily by remote transports / gateways
+        # Router is runtime-owned and configurable
+        self.router: IntentRouter = IntentRouter(
+            self.registry,
+            trace_sink=self.trace_sink,
+            middlewares=middlewares,
+        )
+
+        # Optional encryption provider (transport concern)
         self.emcl_provider: Optional[EMCLProvider] = emcl_provider
 
-        # Default to the fastest transport: in-process router invocation
+        # Transport (default: in-process)
         self.transport: Transport = transport or InProcessTransport(self.router)
+
 
     # ------------------------------------------------------------------
     # Agent management
@@ -60,6 +69,11 @@ class IntentusRuntime:
             runtime.register_agent(MyAgent)
         """
         agent = factory(self.router)
+
+        # Allow agent to receive EMCL if it wants it
+        if self.emcl_provider and getattr(agent, "emcl", None) is None:
+            agent.emcl = self.emcl_provider
+
         self.registry.register(agent)
         return agent
 
