@@ -1,10 +1,10 @@
-## 🚀 IntentusNet
-
 ### **Secure Runtime for Intent Routing and Multi-Agent Execution**
 
 Deterministic • Transport-Agnostic • EMCL-Ready • MCP-Compatible
 
-IntentusNet is an open-source, language-agnostic **AI agent execution runtime** for secure, fallback-capable, distributed orchestration.
+IntentusNet is an open-source, language-agnostic **execution runtime for multi-agent systems**, designed to make routing, fallback, and failures **deterministic, debuggable, and production-operable**.
+
+It focuses on execution semantics — not planning or intelligence — ensuring that **routing, fallback, and failure behavior remain predictable even when models are not**.
 
 <!-- Badges -->
 
@@ -13,7 +13,33 @@ IntentusNet is an open-source, language-agnostic **AI agent execution runtime** 
 [![MCP](https://img.shields.io/badge/MCP-compatible-brightgreen)](#)
 [![Architecture](https://img.shields.io/badge/architecture-intent--router-orange)](#)
 
-It enables structured **intent routing** across agents, tools, or microservices — with EMCL encrypted envelopes, full traceability, and pluggable transports such as HTTP, ZeroMQ, WebSocket, and in-process.
+---
+
+### 🎯 Why IntentusNet Exists
+
+Modern LLM systems are observable, but **not debuggable**.
+
+Failures are often:
+
+- irreproducible
+- incorrectly attributed to models
+- impossible to replay
+- obscured by implicit retries and hidden fallback logic
+
+IntentusNet addresses this by enforcing **deterministic execution semantics around LLMs**, allowing failures to become:
+
+- **Replayable**
+- **Attributable**
+- **Explainable**
+
+This design philosophy is formalized in:
+
+📄 **RFC-0001 — Debuggable Execution Semantics for LLM Systems**  
+→ [`rfcs/RFC-0001-debuggable-llm-execution.md`](rfcs/RFC-0001-debuggable-llm-execution.md)
+
+**Non-goals:** IntentusNet does not plan tasks, generate tools, or control model reasoning.
+
+---
 
 > ⚠️ **Python SDK Notice:**  
 > The **Python Runtime SDK** (router, agents, transports, EMCL, MCP adapter) is _included in this release_.  
@@ -63,7 +89,7 @@ Supported Transports:
 
 ### 🔗 MCP-Compatible Architecture
 
-The architecture aligns with MCP:
+The architecture is compatible with MCP:
 
 - Agents can be wrapped as MCP tools
 - Accept MCP tool requests
@@ -124,9 +150,12 @@ This demo compares **three real-world approaches** using the same logical capabi
 
 The demo is intentionally **non-interactive by default** and safe to run in Docker or CI.
 
+```bash
 python -m examples.deterministic_routing_demo.demo --mode without
 python -m examples.deterministic_routing_demo.demo --mode with
 python -m examples.deterministic_routing_demo.demo --mode mcp
+
+```
 
 ---
 
@@ -204,7 +233,7 @@ python -m examples.deterministic_routing_demo.demo --mode mcp
 
 ### Future
 
-- Multi-agent planner
+- Multi-agent planner (research / explicitly optional)
 - Trust-scored routing
 
 ---
@@ -223,10 +252,11 @@ MIT License — Open source & commercial friendly.
 
 #### 🔐 Keywords
 
-AI agent runtime, intent routing, deterministic routing, agent fallback,
-MCP routing adapter, MCP tool routing, tool routing layer,
-multi-agent orchestration, MCP tools, Model Context Protocol,
-agent router, tool routing, distributed agent execution,
-AI workflow runtime, agent traceability, EMCL encryption,
-ZeroMQ agent transport, WebSocket agent runtime,
-secure agent communication, enterprise AI infrastructure
+AI agent execution runtime, deterministic execution semantics,
+intent routing, explicit fallback chains, debuggable LLM systems,
+agent routing engine, execution traceability, replayable agent flows,
+MCP-compatible runtime, MCP tool execution, Model Context Protocol,
+distributed agent execution, transport-agnostic agent runtime,
+secure agent communication, EMCL encrypted envelopes,
+ZeroMQ agent transport, WebSocket agent transport,
+production AI infrastructure, LLM orchestration runtime
