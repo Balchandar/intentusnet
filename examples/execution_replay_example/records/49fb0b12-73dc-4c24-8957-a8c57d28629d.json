@@ -1,0 +1,116 @@
+{
+  "header": {
+    "executionId": "49fb0b12-73dc-4c24-8957-a8c57d28629d",
+    "createdUtcIso": "2025-12-27T14:08:20.960303+00:00",
+    "envelopeHash": "7ba69bb4ba1ca34117dc01dfaabe3c8015f99e9bbdaa957bde43692eca5e4488",
+    "replayable": true
+  },
+  "envelope": {
+    "version": "1.0",
+    "intent": {
+      "name": "support.ticket.payment",
+      "version": "1.0"
+    },
+    "payload": {
+      "text": "Payment failed with error 402"
+    },
+    "context": {
+      "sourceAgent": "client",
+      "timestamp": "2025-12-27T14:08:20.960279+00:00",
+      "priority": "normal",
+      "tags": []
+    },
+    "metadata": {
+      "requestId": "00a5b108-da77-4c14-aa5c-6e11ee7daaae",
+      "source": "client",
+      "createdAt": "2025-12-27T14:08:20.960279+00:00",
+      "traceId": "80fdd0fa-76a9-4dc2-8fee-bf39a154db7b",
+      "identityChain": []
+    },
+    "routing": {
+      "strategy": "direct",
+      "targetAgent": "payment-expert-agent",
+      "fallbackAgents": []
+    },
+    "routingMetadata": {
+      "decisionPath": [],
+      "retries": 0
+    }
+  },
+  "routerDecision": {
+    "agent": "payment-expert-agent",
+    "intent": "support.ticket.payment",
+    "reason": "direct match",
+    "timestamp": "2025-12-27T14:08:20.960384+00:00"
+  },
+  "events": [
+    {
+      "seq": 1,
+      "type": "INTENT_RECEIVED",
+      "payload": {
+        "traceId": "80fdd0fa-76a9-4dc2-8fee-bf39a154db7b",
+        "intent": "support.ticket.payment"
+      }
+    },
+    {
+      "seq": 2,
+      "type": "AGENT_ATTEMPT_START",
+      "payload": {
+        "agent": "payment-expert-agent",
+        "strategy": "DIRECT"
+      }
+    },
+    {
+      "seq": 3,
+      "type": "AGENT_ATTEMPT_END",
+      "payload": {
+        "agent": "payment-expert-agent",
+        "status": "ok"
+      }
+    },
+    {
+      "seq": 4,
+      "type": "ROUTER_DECISION",
+      "payload": {
+        "agent": "payment-expert-agent",
+        "intent": "support.ticket.payment",
+        "reason": "direct match",
+        "timestamp": "2025-12-27T14:08:20.960384+00:00"
+      }
+    },
+    {
+      "seq": 5,
+      "type": "FINAL_RESPONSE",
+      "payload": {
+        "version": "1.0",
+        "status": "ok",
+        "payload": {
+          "agent": "payment-expert",
+          "modelVersion": "v1",
+          "decision": "Retry payment (provider transient failure)"
+        },
+        "metadata": {
+          "agent": "payment-expert-agent",
+          "traceId": "80fdd0fa-76a9-4dc2-8fee-bf39a154db7b",
+          "timestamp": "2025-12-27T14:08:20.960378+00:00"
+        },
+        "error": null
+      }
+    }
+  ],
+  "finalResponse": {
+    "version": "1.0",
+    "status": "ok",
+    "payload": {
+      "agent": "payment-expert",
+      "modelVersion": "v1",
+      "decision": "Retry payment (provider transient failure)"
+    },
+    "metadata": {
+      "agent": "payment-expert-agent",
+      "traceId": "80fdd0fa-76a9-4dc2-8fee-bf39a154db7b",
+      "timestamp": "2025-12-27T14:08:20.960378+00:00"
+    },
+    "error": null
+  }
+}

@@ -55,13 +55,26 @@ examples = [
   "aiohttp>=3.9.1"
 ]
 
+# -------------------------------------------------
+# BUILD SYSTEM
+# -------------------------------------------------
 [build-system]
 requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
+# -------------------------------------------------
+# CRITICAL: src-layout configuration
+# -------------------------------------------------
+[tool.setuptools]
+package-dir = { "" = "src" }
+
 [tool.setuptools.packages.find]
+where = ["src"]
 include = ["intentusnet", "intentusnet.*"]
 
+# -------------------------------------------------
+# TOOLING
+# -------------------------------------------------
 [tool.black]
 line-length = 100
 
