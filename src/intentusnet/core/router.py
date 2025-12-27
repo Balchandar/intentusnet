@@ -1,11 +1,9 @@
-# intentusnet/core/router.py
-
 from __future__ import annotations
 
 import concurrent.futures
 import datetime as dt
 import logging
-from typing import Optional, List, Tuple
+from typing import Optional, List, Tuple, Any
 
 from intentusnet.core.agent import BaseAgent
 from intentusnet.utils.id_generator import generate_uuid_hex
@@ -21,6 +19,11 @@ from .tracing import TraceSink, InMemoryTraceSink
 from .registry import AgentRegistry
 from .middleware import RouterMiddleware
 
+from ..recording.models import ExecutionRecord
+from ..recording.recorder import InMemoryExecutionRecorder
+from ..recording.store import FileExecutionStore
+
+
 logger = logging.getLogger("intentusnet.router")
 
 
@@ -28,12 +31,9 @@ class IntentRouter:
     """
     Core routing engine (v1 sync).
 
-    Responsibilities:
-      - Resolve intent → candidate agents via AgentRegistry
-      - Apply routing strategy (DIRECT, FALLBACK, BROADCAST, PARALLEL)
-      - Deterministic agent selection (local-first, nodePriority, name)
-      - Call router middlewares (before_route, after_route, on_error)
-      - Record TraceSpan into TraceSink
+    Recording rules:
+    - Recording is passive and must NOT affect routing decisions.
+    - During replay, routing/model calls must not run (handled by ReplayEngine).
     """
 
     def __init__(
@@ -42,10 +42,12 @@ class IntentRouter:
         *,
         trace_sink: Optional[TraceSink] = None,
         middlewares: Optional[list[RouterMiddleware]] = None,
+        record_store: Optional[FileExecutionStore] = None,
     ) -> None:
         self._registry = registry
         self._trace_sink = trace_sink or InMemoryTraceSink()
         self._middlewares: list[RouterMiddleware] = list(middlewares or [])
+        self._record_store = record_store
         self._log = logger
 
     # ===========================================================
@@ -64,6 +66,17 @@ class IntentRouter:
         # ---- Ensure identityChain exists (agents/proxies append hops) ----
         if not hasattr(env.metadata, "identityChain") or env.metadata.identityChain is None:
             env.metadata.identityChain = []
+
+        # ---- Execution Recording (optional) ----
+        recorder: Optional[InMemoryExecutionRecorder] = None
+        if self._record_store is not None:
+            record = ExecutionRecord.new(
+                execution_id=generate_uuid_hex(),
+                created_utc_iso=now_iso(),
+                env=env,
+            )
+            recorder = InMemoryExecutionRecorder(record)
+            recorder.record_event("INTENT_RECEIVED", {"traceId": trace_id, "intent": env.intent.name})
 
         # ---- Middleware: before_route ----
         for m in self._middlewares:
@@ -93,35 +106,49 @@ class IntentRouter:
             agents = self._sort_agents_for_strategy(agents)
 
             # ---- Strategy resolution ----
-            strategy = env.routing.strategy or RoutingStrategy.DIRECT
+            strategy = getattr(env.routing, "strategy", None) or RoutingStrategy.DIRECT
 
             if strategy == RoutingStrategy.DIRECT:
                 agent = self._select_direct_agent(env, agents)
                 active_agent_name = agent.definition.name
+
+                if recorder:
+                    recorder.record_event("AGENT_ATTEMPT_START", {"agent": active_agent_name, "strategy": "DIRECT"})
+
                 response = agent.handle(env)
 
-                decision = self._make_decision(env, active_agent_name, strategy, True, None)
+                if recorder:
+                    recorder.record_event(
+                        "AGENT_ATTEMPT_END",
+                        {"agent": active_agent_name, "status": "ok" if response.error is None else "error"},
+                    )
+
+                decision = self._make_decision(env, active_agent_name, strategy, response.error is None, None)
 
             elif strategy == RoutingStrategy.FALLBACK:
                 response, active_agent_name, decision, last_error = self._route_with_fallback(
-                    env, agents, strategy
+                    env, agents, strategy, recorder
                 )
 
             elif strategy == RoutingStrategy.BROADCAST:
                 response, active_agent_name, decision, last_error = self._route_broadcast(
-                    env, agents, strategy
+                    env, agents, strategy, recorder
                 )
 
             elif strategy == RoutingStrategy.PARALLEL:
                 response, active_agent_name, decision, last_error = self._route_parallel(
-                    env, agents, strategy
+                    env, agents, strategy, recorder
                 )
 
             else:
                 # Safety net: unknown strategy behaves like fallback
                 response, active_agent_name, decision, last_error = self._route_with_fallback(
-                    env, agents, strategy
+                    env, agents, strategy, recorder
                 )
+
+            if recorder and decision is not None:
+                # Do not assume RouterDecision schema. We store best-effort dict.
+                recorder.record_router_decision(getattr(decision, "__dict__", {"decision": str(decision)}))
 
         except Exception as ex:
             self._log.exception("Routing failed: %s", ex)
@@ -151,7 +178,7 @@ class IntentRouter:
                 except Exception:
                     self._log.exception("Router middleware on_error failed")
 
-            return AgentResponse(
+            error_resp = AgentResponse(
                 version="1.0",
                 status="error",
                 payload=None,
@@ -162,6 +189,12 @@ class IntentRouter:
                 },
                 error=last_error,
             )
+
+            if recorder:
+                recorder.record_final_response(getattr(error_resp, "__dict__", {"response": str(error_resp)}))
+                self._record_store.save(recorder.get_record())
+
+            return error_resp
 
         # ---- Normal path ----
         success = response.error is None
@@ -195,8 +228,10 @@ class IntentRouter:
         response.metadata.setdefault("agent", active_agent_name)
         response.metadata.setdefault("timestamp", now_iso())
 
-        # Optional: decision can be attached for debugging without freezing schema
-        # response.metadata.setdefault("routingDecision", decision.__dict__ if decision else None)
+        # Save record (success path)
+        if recorder:
+            recorder.record_final_response(getattr(response, "__dict__", {"response": str(response)}))
+            self._record_store.save(recorder.get_record())
 
         return response
 
@@ -204,13 +239,6 @@ class IntentRouter:
     # Deterministic Sorting
     # ===========================================================
     def _sort_agents_for_strategy(self, agents: List[BaseAgent]) -> List[BaseAgent]:
-        """
-        Deterministic agent ordering:
-          1. Local agents first (nodeId is None)
-          2. Then by nodePriority (lower = higher priority)
-          3. Then by agent name (stable tie-breaker)
-        """
-
         def key(agent: BaseAgent):
             d = agent.definition
             is_remote = 1 if getattr(d, "nodeId", None) else 0
@@ -223,12 +251,7 @@ class IntentRouter:
     # Strategy Implementations
     # ===========================================================
     def _select_direct_agent(self, env: IntentEnvelope, agents: List[BaseAgent]) -> BaseAgent:
-        """
-        DIRECT strategy:
-          - routing.targetAgent wins if provided
-          - otherwise first agent after deterministic sorting
-        """
-        target = env.routing.targetAgent
+        target = getattr(env.routing, "targetAgent", None)
         if target:
             for a in agents:
                 if a.definition.name == target:
@@ -243,16 +266,19 @@ class IntentRouter:
         env: IntentEnvelope,
         agents: List[BaseAgent],
         strategy: RoutingStrategy,
+        recorder: Optional[InMemoryExecutionRecorder],
     ) -> Tuple[AgentResponse, str, RouterDecision, Optional[ErrorInfo]]:
-        """
-        FALLBACK:
-          - Try agents sequentially
-          - First success wins
-        """
         last_error: Optional[ErrorInfo] = None
 
         for idx, agent in enumerate(agents):
             agent_name = agent.definition.name
+
+            if recorder:
+                recorder.record_event(
+                    "AGENT_ATTEMPT_START",
+                    {"agent": agent_name, "strategy": "FALLBACK", "index": idx},
+                )
+
             try:
                 resp = agent.handle(env)
             except Exception as ex:
@@ -263,13 +289,35 @@ class IntentRouter:
                     retryable=False,
                     details={},
                 )
+                if recorder:
+                    recorder.record_event(
+                        "AGENT_ATTEMPT_END",
+                        {"agent": agent_name, "status": "error", "exception": str(ex)},
+                    )
+                # fallback continues
+                if idx + 1 < len(agents) and recorder:
+                    recorder.record_event(
+                        "FALLBACK_TRIGGERED",
+                        {"from": agent_name, "to": agents[idx + 1].definition.name},
+                    )
                 continue
+
+            if recorder:
+                recorder.record_event(
+                    "AGENT_ATTEMPT_END",
+                    {"agent": agent_name, "status": "ok" if resp.error is None else "error"},
+                )
 
             if resp.error is None:
                 decision = self._make_decision(env, agent_name, strategy, True, idx)
                 return resp, agent_name, decision, last_error
 
             last_error = resp.error
+            if idx + 1 < len(agents) and recorder:
+                recorder.record_event(
+                    "FALLBACK_TRIGGERED",
+                    {"from": agent_name, "to": agents[idx + 1].definition.name},
+                )
 
         if last_error is None:
             last_error = ErrorInfo(
@@ -281,13 +329,7 @@ class IntentRouter:
 
         decision = self._make_decision(env, "fallback", strategy, False, None)
         return (
-            AgentResponse(
-                version="1.0",
-                status="error",
-                payload=None,
-                metadata={},
-                error=last_error,
-            ),
+            AgentResponse(version="1.0", status="error", payload=None, metadata={}, error=last_error),
             "fallback",
             decision,
             last_error,
@@ -298,23 +340,22 @@ class IntentRouter:
         env: IntentEnvelope,
         agents: List[BaseAgent],
         strategy: RoutingStrategy,
+        recorder: Optional[InMemoryExecutionRecorder],
     ) -> Tuple[AgentResponse, str, RouterDecision, Optional[ErrorInfo]]:
-        """
-        BROADCAST:
-          - Execute all agents sequentially
-          - Return last success if any
-          - If none succeed, return last error
-        """
         last_error: Optional[ErrorInfo] = None
         last_success: Optional[AgentResponse] = None
         last_agent_name = "broadcast"
 
         for agent in agents:
+            agent_name = agent.definition.name
+            if recorder:
+                recorder.record_event("AGENT_ATTEMPT_START", {"agent": agent_name, "strategy": "BROADCAST"})
+
             try:
                 resp = agent.handle(env)
                 if resp.error is None:
                     last_success = resp
-                    last_agent_name = agent.definition.name
+                    last_agent_name = agent_name
                 else:
                     last_error = resp.error
             except Exception as ex:
@@ -323,6 +364,12 @@ class IntentRouter:
                     message=str(ex),
                     retryable=False,
                     details={},
+                )
+
+            if recorder:
+                recorder.record_event(
+                    "AGENT_ATTEMPT_END",
+                    {"agent": agent_name, "status": "ok" if (last_success is not None and last_agent_name == agent_name) else "error"},
                 )
 
         if last_success is not None:
@@ -339,13 +386,7 @@ class IntentRouter:
 
         decision = self._make_decision(env, "broadcast", strategy, False, None)
         return (
-            AgentResponse(
-                version="1.0",
-                status="error",
-                payload=None,
-                metadata={},
-                error=last_error,
-            ),
+            AgentResponse(version="1.0", status="error", payload=None, metadata={}, error=last_error),
             "broadcast",
             decision,
             last_error,
@@ -356,13 +397,8 @@ class IntentRouter:
         env: IntentEnvelope,
         agents: List[BaseAgent],
         strategy: RoutingStrategy,
+        recorder: Optional[InMemoryExecutionRecorder],
     ) -> Tuple[AgentResponse, str, RouterDecision, Optional[ErrorInfo]]:
-        """
-        PARALLEL:
-          - Execute all agents concurrently
-          - First success wins
-          - Remaining completions are ignored (v1)
-        """
         last_error: Optional[ErrorInfo] = None
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=len(agents) or 1) as executor:
@@ -371,6 +407,9 @@ class IntentRouter:
             for fut in concurrent.futures.as_completed(futures):
                 agent = futures[fut]
                 agent_name = agent.definition.name
+
+                if recorder:
+                    recorder.record_event("AGENT_ATTEMPT_START", {"agent": agent_name, "strategy": "PARALLEL"})
 
                 try:
                     resp = fut.result()
@@ -381,7 +420,15 @@ class IntentRouter:
                         retryable=False,
                         details={},
                     )
+                    if recorder:
+                        recorder.record_event("AGENT_ATTEMPT_END", {"agent": agent_name, "status": "error", "exception": str(ex)})
                     continue
+
+                if recorder:
+                    recorder.record_event(
+                        "AGENT_ATTEMPT_END",
+                        {"agent": agent_name, "status": "ok" if resp.error is None else "error"},
+                    )
 
                 if resp.error is None:
                     decision = self._make_decision(env, agent_name, strategy, True, None)
@@ -399,20 +446,14 @@ class IntentRouter:
 
         decision = self._make_decision(env, "parallel", strategy, False, None)
         return (
-            AgentResponse(
-                version="1.0",
-                status="error",
-                payload=None,
-                metadata={},
-                error=last_error,
-            ),
+            AgentResponse(version="1.0", status="error", payload=None, metadata={}, error=last_error),
             "parallel",
             decision,
             last_error,
         )
 
     # ===========================================================
-    # Tracing helpers (v1 minimal TraceSpan)
+    # Decision + Tracing helpers
     # ===========================================================
     def _make_decision(
         self,
@@ -436,12 +477,13 @@ class IntentRouter:
         else:
             reason = "routing failed"
 
+        # Keep your RouterDecision schema unchanged (do NOT assume fields).
+        # If protocol.tracing.RouterDecision differs, this remains your contract.
         return RouterDecision(
             agent=agent_name,
             intent=env.intent.name,
             reason=reason,
         )
-
 
     def _make_span(
         self,
@@ -452,17 +494,6 @@ class IntentRouter:
         success: bool,
         error: Optional[ErrorInfo],
     ) -> TraceSpan:
-        """
-        v1 TraceSpan is intentionally minimal and MUST match protocol.tracing.TraceSpan.
-
-        Expected TraceSpan fields (v1):
-          - agent
-          - intent
-          - status ("ok" | "error")
-          - latencyMs
-          - error (optional str)
-          - timestamp (default)
-        """
         end = now_utc()
         latency_ms = (end - start).total_seconds() * 1000
 

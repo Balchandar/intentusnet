@@ -1,8 +1,10 @@
+# IntentusNet
+
 ### **Secure Runtime for Intent Routing and Multi-Agent Execution**
 
 Deterministic • Transport-Agnostic • EMCL-Ready • MCP-Compatible
 
-IntentusNet is an open-source, language-agnostic **execution runtime for multi-agent systems**, designed to make routing, fallback, and failures **deterministic, debuggable, and production-operable**.
+IntentusNet is an open-source, language-agnostic **execution runtime for multi-agent systems**, designed to make routing, fallback, and failures **deterministic, replayable, explainable, and production-operable**.
 
 It focuses on execution semantics — not planning or intelligence — ensuring that **routing, fallback, and failure behavior remain predictable even when models are not**.
 
@@ -15,7 +17,7 @@ It focuses on execution semantics — not planning or intelligence — ensuring 
 
 ---
 
-### 🎯 Why IntentusNet Exists
+## 🎯 Why IntentusNet Exists
 
 Modern LLM systems are observable, but **not debuggable**.
 
@@ -31,6 +33,25 @@ IntentusNet addresses this by enforcing **deterministic execution semantics arou
 - **Replayable**
 - **Attributable**
 - **Explainable**
+
+### 🔁 Execution Recorder & Replay
+
+IntentusNet treats **executions as immutable facts**, not transient logs.
+
+Each intent execution can be:
+
+- **Recorded** as a first-class artifact
+- **Replayed deterministically**, without re-running models
+- **Explained**, even after model upgrades or failures
+
+This enables:
+
+- reliable root-cause analysis
+- auditability and compliance
+- safe model iteration without rewriting history
+
+> **The model may change.  
+> The execution must not.**
 
 This design philosophy is formalized in:
 
@@ -48,13 +69,14 @@ This design philosophy is formalized in:
 
 ---
 
-### ✨ Key Features
+## ✨ Key Features
 
 - Language-agnostic agent model
 - `IntentEnvelope` abstraction for clarity
 - Agent registry + capability schema
 - Deterministic routing with fallback support
 - Identity-aware agent execution
+- Execution recording & deterministic replay
 - EMCL envelope encryption (optional)
 
 Supported Transports:
@@ -67,7 +89,7 @@ Supported Transports:
 
 ---
 
-### ⚡ Intent-Oriented Routing Engine
+## ⚡ Intent-Oriented Routing Engine
 
 - Capability-driven routing
 - Envelope-defined fallback chain
@@ -78,7 +100,7 @@ Supported Transports:
 
 ---
 
-### 🔐 EMCL Secure Envelope (Optional)
+## 🔐 EMCL Secure Envelope (Optional)
 
 - AES-GCM authenticated encryption
 - HMAC-SHA256 signing (demo provider)
@@ -87,7 +109,7 @@ Supported Transports:
 
 ---
 
-### 🔗 MCP-Compatible Architecture
+## 🔗 MCP-Compatible Architecture
 
 The architecture is compatible with MCP:
 
@@ -100,7 +122,7 @@ The **MCP Adapter** is included in the runtime.
 
 ---
 
-### 🌐 Language-Agnostic Design
+## 🌐 Language-Agnostic Design
 
 Agents can be written in:
 
@@ -113,9 +135,9 @@ Agents can be written in:
 
 ---
 
-### 📦 SDK Status
+## 📦 SDK Status
 
-#### ✔️ Included in This Release — Python Runtime SDK
+### ✔️ Included in This Release — Python Runtime SDK
 
 - Agent base class
 - Router + fallback engine
@@ -125,63 +147,38 @@ Agents can be written in:
 - MCP Adapter
 - Protocol models & validators
 - Trace sink
+- Execution recorder & replay engine
 - Example agents & demos
 
 ---
 
-### 🧪 Demos (What Changes in Practice)
+## 🧪 Demos (What Changes in Practice)
 
 IntentusNet demos focus on **code structure and execution behavior**, not AI output quality.
 
-The primary demo is:
-
-#### `deterministic_routing_demo`
+### `deterministic_routing_demo`
 
 This demo compares **three real-world approaches** using the same logical capabilities:
 
-- **without** — typical production glue code  
-  Manual tool calls, explicit retries, hand-written fallback logic.
-
-- **with** — centralized routing using IntentusNet  
-  Routing, fallback, and traceability are expressed as routing options and handled by the router.
-
-- **mcp** — same routing flow backed by a mock MCP tool server  
-  Demonstrates local + remote agents participating in the same routing model.
-
-The demo is intentionally **non-interactive by default** and safe to run in Docker or CI.
+- **without** — typical production glue code
+- **with** — centralized routing using IntentusNet
+- **mcp** — same routing flow backed by a mock MCP tool server
 
 ```bash
 python -m examples.deterministic_routing_demo.demo --mode without
 python -m examples.deterministic_routing_demo.demo --mode with
 python -m examples.deterministic_routing_demo.demo --mode mcp
-
 ```
 
----
+### `execution_replay_example`
 
-### 📌 Coming Next Version
-
-#### Python Ergonomic SDK
-
-- `@agent` decorators
-- Auto-capability registration
-- Schema validation helpers
-- PyPI packaging
-- Workflow utilities
-
-#### C# SDK
-
-- Routing client
-- Agent interfaces
-- EMCL provider
-- Transports
+Demonstrates how **model upgrades change live behavior** while **past executions remain replayable and explainable**.
 
 ---
 
-```bash
+## 🧰 Architecture Snapshot
 
-### 🧰 Architecture Snapshot
-
+```
 ┌──────────────────────────────────────────────────────────────┐
 │                    Client / Application                      │
 └──────────────────────────────────────────────────────────────┘
@@ -196,16 +193,18 @@ python -m examples.deterministic_routing_demo.demo --mode mcp
 │ MCP Tools │ ZeroMQ │ HTTP │ WebSocket │ In-Process           │
 └──────────────────────────────────────────────────────────────┘
            Backend Agents / Services (Any Language)
-
 ```
 
-### 📦 Capabilities Summary
+---
+
+## 📦 Capabilities Summary
 
 ### Included
 
 - Intent router + fallback
 - Capability matching
 - Multi-transport execution
+- Execution recording & deterministic replay
 - EMCL encryption
 - Trace spans
 - Agent identity + correlation IDs
@@ -221,9 +220,9 @@ python -m examples.deterministic_routing_demo.demo --mode mcp
 
 ---
 
-### 🗺 Roadmap
+## 🗺 Roadmap
 
-#### Next Release
+### Next Release
 
 - Python ergonomic SDK
 - C# SDK
@@ -238,13 +237,13 @@ python -m examples.deterministic_routing_demo.demo --mode mcp
 
 ---
 
-### 👤 Author
+## 👤 Author
 
 **Balachandar Manikandan**
 
 ---
 
-### 📍 License
+## 📍 License
 
 MIT License — Open source & commercial friendly.
 

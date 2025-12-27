@@ -13,6 +13,8 @@ from ..transport.base import Transport
 from .agent import BaseAgent
 from .client import IntentusClient
 
+from ..recording.store import FileExecutionStore
+
 
 class IntentusRuntime:
     """
@@ -23,6 +25,10 @@ class IntentusRuntime:
     - Transport:     how intents are sent/received (in-process by default)
     - TraceSink:     where trace spans are recorded
     - EMCLProvider:  optional encryption layer for transport boundaries
+    - Execution Recording (optional):
+        - Deterministic execution capture
+        - Replayable agent/model outputs
+        - Developer reliability tooling (NOT monitoring)
 
     This is the main entry point used by applications to host agents
     in-process or behind a gateway.
@@ -36,23 +42,39 @@ class IntentusRuntime:
         transport: Optional[Transport] = None,
         emcl_provider: Optional[EMCLProvider] = None,
         middlewares: Optional[Sequence[RouterMiddleware]] = None,
+        enable_recording: bool = True,
+        record_dir: str = ".intentusnet/records",
     ) -> None:
+        # ------------------------------------------------------------------
+        # Core runtime components
+        # ------------------------------------------------------------------
         self.registry: AgentRegistry = registry or AgentRegistry()
         self.trace_sink: TraceSink = trace_sink or InMemoryTraceSink()
 
-        # Router is runtime-owned and configurable
+        # ------------------------------------------------------------------
+        # Execution recording (runtime-owned, optional)
+        # ------------------------------------------------------------------
+        self.record_store = FileExecutionStore(record_dir) if enable_recording else None
+
+        # ------------------------------------------------------------------
+        # Router (runtime-owned)
+        # ------------------------------------------------------------------
         self.router: IntentRouter = IntentRouter(
             self.registry,
             trace_sink=self.trace_sink,
             middlewares=middlewares,
+            record_store=self.record_store,
         )
 
+        # ------------------------------------------------------------------
         # Optional encryption provider (transport concern)
+        # ------------------------------------------------------------------
         self.emcl_provider: Optional[EMCLProvider] = emcl_provider
 
+        # ------------------------------------------------------------------
         # Transport (default: in-process)
+        # ------------------------------------------------------------------
         self.transport: Transport = transport or InProcessTransport(self.router)
-
 
     # ------------------------------------------------------------------
     # Agent management
@@ -67,6 +89,11 @@ class IntentusRuntime:
             runtime.register_agent(lambda router: MyAgent(definition, router))
             # or, if MyAgent(router) is the constructor:
             runtime.register_agent(MyAgent)
+
+        Notes:
+        - Agents are always runtime-owned
+        - Router is injected by the runtime (never user-created)
+        - EMCL is injected optionally, if the agent supports it
         """
         agent = factory(self.router)
 
@@ -86,5 +113,11 @@ class IntentusRuntime:
 
         This is the main way for application code (or demos) to interact
         with the runtime from within the same process.
+
+        The client:
+        - Does NOT know about agents
+        - Does NOT know about routing logic
+        - Does NOT know about execution recording
+        - Only speaks to the transport boundary
         """
         return IntentusClient(self.transport)

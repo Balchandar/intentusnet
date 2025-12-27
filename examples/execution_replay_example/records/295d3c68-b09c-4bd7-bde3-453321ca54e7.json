@@ -1,0 +1,126 @@
+{
+  "header": {
+    "executionId": "295d3c68-b09c-4bd7-bde3-453321ca54e7",
+    "createdUtcIso": "2025-12-27T14:08:20.959529+00:00",
+    "envelopeHash": "4c290e04202a9ea577da9a352f0344be71d4a2d754108df99f9a4a2afec8e180",
+    "replayable": true
+  },
+  "envelope": {
+    "version": "1.0",
+    "intent": {
+      "name": "support.ticket.analyze",
+      "version": "1.0"
+    },
+    "payload": {
+      "text": "Payment failed with error 402"
+    },
+    "context": {
+      "sourceAgent": "client",
+      "timestamp": "2025-12-27T14:08:20.959500+00:00",
+      "priority": "normal",
+      "tags": []
+    },
+    "metadata": {
+      "requestId": "d8430d6b-18a4-46eb-a5d5-ffe2f69f6d15",
+      "source": "client",
+      "createdAt": "2025-12-27T14:08:20.959500+00:00",
+      "traceId": "25daeff4-c441-48eb-8b1b-59ee1e5185b2",
+      "identityChain": []
+    },
+    "routing": {
+      "strategy": "direct",
+      "targetAgent": null,
+      "fallbackAgents": []
+    },
+    "routingMetadata": {
+      "decisionPath": [],
+      "retries": 0
+    }
+  },
+  "routerDecision": {
+    "agent": "ticket-coordinator-agent",
+    "intent": "support.ticket.analyze",
+    "reason": "direct match",
+    "timestamp": "2025-12-27T14:08:20.960864+00:00"
+  },
+  "events": [
+    {
+      "seq": 1,
+      "type": "INTENT_RECEIVED",
+      "payload": {
+        "traceId": "25daeff4-c441-48eb-8b1b-59ee1e5185b2",
+        "intent": "support.ticket.analyze"
+      }
+    },
+    {
+      "seq": 2,
+      "type": "AGENT_ATTEMPT_START",
+      "payload": {
+        "agent": "ticket-coordinator-agent",
+        "strategy": "DIRECT"
+      }
+    },
+    {
+      "seq": 3,
+      "type": "AGENT_ATTEMPT_END",
+      "payload": {
+        "agent": "ticket-coordinator-agent",
+        "status": "ok"
+      }
+    },
+    {
+      "seq": 4,
+      "type": "ROUTER_DECISION",
+      "payload": {
+        "agent": "ticket-coordinator-agent",
+        "intent": "support.ticket.analyze",
+        "reason": "direct match",
+        "timestamp": "2025-12-27T14:08:20.960864+00:00"
+      }
+    },
+    {
+      "seq": 5,
+      "type": "FINAL_RESPONSE",
+      "payload": {
+        "version": "1.0",
+        "status": "ok",
+        "payload": {
+          "workflow": "support.ticket.analyze",
+          "category": "payment",
+          "selectedAgent": "payment-expert-agent",
+          "result": {
+            "agent": "payment-expert",
+            "modelVersion": "v1",
+            "decision": "Retry payment (provider transient failure)"
+          }
+        },
+        "metadata": {
+          "agent": "ticket-coordinator-agent",
+          "traceId": "25daeff4-c441-48eb-8b1b-59ee1e5185b2",
+          "timestamp": "2025-12-27T14:08:20.960856+00:00"
+        },
+        "error": null
+      }
+    }
+  ],
+  "finalResponse": {
+    "version": "1.0",
+    "status": "ok",
+    "payload": {
+      "workflow": "support.ticket.analyze",
+      "category": "payment",
+      "selectedAgent": "payment-expert-agent",
+      "result": {
+        "agent": "payment-expert",
+        "modelVersion": "v1",
+        "decision": "Retry payment (provider transient failure)"
+      }
+    },
+    "metadata": {
+      "agent": "ticket-coordinator-agent",
+      "traceId": "25daeff4-c441-48eb-8b1b-59ee1e5185b2",
+      "timestamp": "2025-12-27T14:08:20.960856+00:00"
+    },
+    "error": null
+  }
+}

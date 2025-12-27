@@ -1,0 +1,112 @@
+{
+  "header": {
+    "executionId": "3ec2d210-7a8d-4442-88c3-2e40ee27c55a",
+    "createdUtcIso": "2025-12-27T14:08:20.959668+00:00",
+    "envelopeHash": "1c86fd72d5c5f0a6ec7645e5c41aa930bfe9f0c77c485c4445c906e9d4335879",
+    "replayable": true
+  },
+  "envelope": {
+    "version": "1.0",
+    "intent": {
+      "name": "support.ticket.classify",
+      "version": "1.0"
+    },
+    "payload": {
+      "text": "Payment failed with error 402"
+    },
+    "context": {
+      "sourceAgent": "client",
+      "timestamp": "2025-12-27T14:08:20.959651+00:00",
+      "priority": "normal",
+      "tags": []
+    },
+    "metadata": {
+      "requestId": "d4f2a11e-ae8e-4503-bf86-a7ff76a7e422",
+      "source": "client",
+      "createdAt": "2025-12-27T14:08:20.959651+00:00",
+      "traceId": "5630abb2-478e-432f-bcf2-99725511c9c9",
+      "identityChain": []
+    },
+    "routing": {
+      "strategy": "direct",
+      "targetAgent": "classifier-agent",
+      "fallbackAgents": []
+    },
+    "routingMetadata": {
+      "decisionPath": [],
+      "retries": 0
+    }
+  },
+  "routerDecision": {
+    "agent": "classifier-agent",
+    "intent": "support.ticket.classify",
+    "reason": "direct match",
+    "timestamp": "2025-12-27T14:08:20.959738+00:00"
+  },
+  "events": [
+    {
+      "seq": 1,
+      "type": "INTENT_RECEIVED",
+      "payload": {
+        "traceId": "5630abb2-478e-432f-bcf2-99725511c9c9",
+        "intent": "support.ticket.classify"
+      }
+    },
+    {
+      "seq": 2,
+      "type": "AGENT_ATTEMPT_START",
+      "payload": {
+        "agent": "classifier-agent",
+        "strategy": "DIRECT"
+      }
+    },
+    {
+      "seq": 3,
+      "type": "AGENT_ATTEMPT_END",
+      "payload": {
+        "agent": "classifier-agent",
+        "status": "ok"
+      }
+    },
+    {
+      "seq": 4,
+      "type": "ROUTER_DECISION",
+      "payload": {
+        "agent": "classifier-agent",
+        "intent": "support.ticket.classify",
+        "reason": "direct match",
+        "timestamp": "2025-12-27T14:08:20.959738+00:00"
+      }
+    },
+    {
+      "seq": 5,
+      "type": "FINAL_RESPONSE",
+      "payload": {
+        "version": "1.0",
+        "status": "ok",
+        "payload": {
+          "category": "payment"
+        },
+        "metadata": {
+          "agent": "classifier",
+          "traceId": "5630abb2-478e-432f-bcf2-99725511c9c9",
+          "timestamp": "2025-12-27T14:08:20.959733+00:00"
+        },
+        "error": null
+      }
+    }
+  ],
+  "finalResponse": {
+    "version": "1.0",
+    "status": "ok",
+    "payload": {
+      "category": "payment"
+    },
+    "metadata": {
+      "agent": "classifier",
+      "traceId": "5630abb2-478e-432f-bcf2-99725511c9c9",
+      "timestamp": "2025-12-27T14:08:20.959733+00:00"
+    },
+    "error": null
+  }
+}
