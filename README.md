@@ -1,48 +1,51 @@
 # IntentusNet
 
-### **Secure Runtime for Intent Routing and Multi-Agent Execution**
+### Deterministic Execution Runtime for Intent Routing and Multi-Agent Systems
 
-Deterministic • Transport-Agnostic • EMCL-Ready • MCP-Compatible
+**Deterministic • Transport-Agnostic • EMCL-Ready • MCP-Compatible**
 
-IntentusNet is an open-source, language-agnostic **execution runtime for multi-agent systems**, designed to make routing, fallback, and failures **deterministic, replayable, explainable, and production-operable**.
+IntentusNet is an open-source, language-agnostic **execution runtime for multi-agent systems**.  
+It makes routing, fallback, and failure handling **deterministic, replayable, explainable, and production-operable**.
 
-It focuses on execution semantics — not planning or intelligence — ensuring that **routing, fallback, and failure behavior remain predictable even when models are not**.
+IntentusNet focuses strictly on **execution semantics**, not planning or intelligence — ensuring that **execution behavior remains predictable even when models are not**.
 
-<!-- Badges -->
+---
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.9%2B-blue)](#)
 [![MCP](https://img.shields.io/badge/MCP-compatible-brightgreen)](#)
-[![Architecture](https://img.shields.io/badge/architecture-intent--router-orange)](#)
+[![Architecture](https://img.shields.io/badge/architecture-execution--runtime-orange)](#)
 
 ---
 
-## 🎯 Why IntentusNet Exists
+## Why IntentusNet
 
 Modern LLM systems are observable, but **not debuggable**.
 
-Failures are often:
+In real production systems, failures are often:
 
 - irreproducible
-- incorrectly attributed to models
-- impossible to replay
-- obscured by implicit retries and hidden fallback logic
+- incorrectly blamed on models
+- hidden behind retries and fallback logic
+- impossible to replay or audit
 
-IntentusNet addresses this by enforcing **deterministic execution semantics around LLMs**, allowing failures to become:
+IntentusNet addresses this by enforcing **deterministic execution semantics around LLMs**, so failures become:
 
 - **Replayable**
 - **Attributable**
 - **Explainable**
 
-### 🔁 Execution Recorder & Replay
+---
+
+## Execution Recording & Deterministic Replay
 
 IntentusNet treats **executions as immutable facts**, not transient logs.
 
-Each intent execution can be:
+Each execution is:
 
-- **Recorded** as a first-class artifact
-- **Replayed deterministically**, without re-running models
-- **Explained**, even after model upgrades or failures
+- recorded as a first-class artifact
+- replayable deterministically (without re-running models)
+- inspectable after crashes or upgrades
 
 This enables:
 
@@ -53,116 +56,108 @@ This enables:
 > **The model may change.  
 > The execution must not.**
 
-This design philosophy is formalized in:
+This design is formalized in  
+**RFC-0001 — Debuggable Execution Semantics for LLM Systems**  
+→ `rfcs/RFC-0001-debuggable-llm-execution.md`
 
-📄 **RFC-0001 — Debuggable Execution Semantics for LLM Systems**  
-→ [`rfcs/RFC-0001-debuggable-llm-execution.md`](rfcs/RFC-0001-debuggable-llm-execution.md)
-
-**Non-goals:** IntentusNet does not plan tasks, generate tools, or control model reasoning.
-
----
-
-> ⚠️ **Python SDK Notice:**  
-> The **Python Runtime SDK** (router, agents, transports, EMCL, MCP adapter) is _included in this release_.  
-> A higher-level ergonomic SDK (decorators, auto-registration, PyPI package) arrives in the next version.  
-> C# SDK also arrives next version.
+**Non-goals:** IntentusNet does not plan tasks, reason about goals, or optimize prompts.
 
 ---
 
-## ✨ Key Features
+## Core Capabilities
 
-- Language-agnostic agent model
-- `IntentEnvelope` abstraction for clarity
-- Agent registry + capability schema
-- Deterministic routing with fallback support
-- Identity-aware agent execution
-- Execution recording & deterministic replay
-- EMCL envelope encryption (optional)
-
-Supported Transports:
-
-- HTTP / JSON
-- ZeroMQ
-- WebSocket
-- In-process
-- _(Future)_ MCP-native transport
+- Deterministic intent routing
+- Explicit fallback chains
+- Execution recording (WAL-backed)
+- Deterministic replay & verification
+- Crash-safe recovery
+- Typed failures & execution contracts
+- Operator-grade CLI
+- Transport-agnostic execution
 
 ---
 
-## ⚡ Intent-Oriented Routing Engine
+## Intent-Oriented Routing
 
 - Capability-driven routing
-- Envelope-defined fallback chain
-- Sequential or parallel intent flows
+- Explicit fallback sequences
+- Sequential or parallel execution
 - Priority-based routing
-- Trace spans with metadata
-- `RouterDecision` for auditing workflows
+- Auditable routing decisions
+- Trace spans with execution metadata
+
+Routing decisions are **deterministic and replayable**, not heuristic.
 
 ---
 
-## 🔐 EMCL Secure Envelope (Optional)
+## EMCL Secure Envelope (Optional)
+
+IntentusNet supports **EMCL (Encrypted Model Context Layer)**:
 
 - AES-GCM authenticated encryption
 - HMAC-SHA256 signing (demo provider)
 - Identity-chain propagation
-- Nonce/timestamp/anti-replay logic
+- Anti-replay protections
+
+EMCL is optional and transport-agnostic.
 
 ---
 
-## 🔗 MCP-Compatible Architecture
+## MCP Compatibility
 
-The architecture is compatible with MCP:
+IntentusNet is **MCP-compatible by design**:
 
 - Agents can be wrapped as MCP tools
-- Accept MCP tool requests
-- Emit MCP-style responses
+- MCP tool requests can be accepted
+- MCP-style responses can be emitted
 - Optional EMCL-secured MCP envelopes
 
-The **MCP Adapter** is included in the runtime.
+IntentusNet provides deterministic execution semantics **around MCP tools**.
 
 ---
 
-## 🌐 Language-Agnostic Design
+## Language-Agnostic Design
 
-Agents can be written in:
+Agents can be implemented in any language that supports:
 
-- Python
-- C#
-- Go
-- TypeScript
-- Rust
-- Any language speaking HTTP/ZeroMQ/WebSocket
+- HTTP / JSON
+- ZeroMQ
+- WebSocket
+
+Including:
+Python, C#, Go, TypeScript, Rust
 
 ---
 
-## 📦 SDK Status
+## SDK Status
 
-### ✔️ Included in This Release — Python Runtime SDK
+### Included — Python Runtime SDK
 
-- Agent base class
-- Router + fallback engine
-- AgentRegistry
-- Transports: ZeroMQ, HTTP, WebSocket, In-process
-- EMCL providers (AES-GCM, HMAC)
-- MCP Adapter
-- Protocol models & validators
-- Trace sink
+- Intent router & fallback engine
+- Agent base classes
+- Agent registry
+- Multi-transport execution
 - Execution recorder & replay engine
+- WAL-backed crash recovery
+- EMCL providers
+- MCP adapter
+- CLI tooling
 - Example agents & demos
 
+> **Note:**  
+> Higher-level ergonomic SDKs (decorators, auto-registration) and C#/TypeScript SDKs are planned next.
+
 ---
 
-## 🧪 Demos (What Changes in Practice)
-
-IntentusNet demos focus on **code structure and execution behavior**, not AI output quality.
+## Demos
 
 ### `deterministic_routing_demo`
 
-This demo compares **three real-world approaches** using the same logical capabilities:
+Compares three approaches using identical capabilities:
 
-- **without** — typical production glue code
-- **with** — centralized routing using IntentusNet
-- **mcp** — same routing flow backed by a mock MCP tool server
+- **without** — ad-hoc production glue code
+- **with** — deterministic routing via IntentusNet
+- **mcp** — routing backed by a mock MCP tool server
 
 ```bash
 python -m examples.deterministic_routing_demo.demo --mode without
@@ -172,90 +167,65 @@ python -m examples.deterministic_routing_demo.demo --mode mcp
 
 ### `execution_replay_example`
 
-Demonstrates how **model upgrades change live behavior** while **past executions remain replayable and explainable**.
+Shows how model upgrades change live behavior while past executions remain replayable.
 
 ---
 
-## 🧰 Architecture Snapshot
+## Operational Scope (Important)
 
-```
-┌──────────────────────────────────────────────────────────────┐
-│                    Client / Application                      │
-└──────────────────────────────────────────────────────────────┘
-                               │
-                          Intent Router
-                               │
-                       Agent Execution Layer
-                               │
-                  EMCL Secure Envelope (Optional)
-                               │
-┌──────────────────────────────────────────────────────────────┐
-│ MCP Tools │ ZeroMQ │ HTTP │ WebSocket │ In-Process           │
-└──────────────────────────────────────────────────────────────┘
-           Backend Agents / Services (Any Language)
-```
+IntentusNet is a **deterministic execution runtime**, not an autonomous agent system.
 
----
+### Guarantees
 
-## 📦 Capabilities Summary
+- Deterministic routing, fallback, and failures
+- Crash-safe execution recording
+- Deterministic replay or loud failure on divergence
+- Explicit contracts and typed failures
+- CLI-first operational control
 
-### Included
+### Explicit Non-Goals
 
-- Intent router + fallback
-- Capability matching
-- Multi-transport execution
-- Execution recording & deterministic replay
-- EMCL encryption
-- Trace spans
-- Agent identity + correlation IDs
-- MCP-compatible core
-- Python runtime SDK
+- No task planning or reasoning
+- No evaluation of model outputs
+- No replacement for workflow engines
+- No distributed consensus in v1
 
-### Planned
+### Determinism Boundary
 
-- Python ergonomic SDK
-- C# SDK, TypeScript SDK
-- Full MCP Adapter (inbound + outbound)
-- EMCL key vault + rotation
+Determinism is enforced at the **execution layer**, not the **model layer**.  
+Non-deterministic model behavior is detected, recorded, and surfaced — never hidden.
 
 ---
 
-## 🗺 Roadmap
+## Roadmap
 
-### Next Release
+**Next**
 
 - Python ergonomic SDK
 - C# SDK
 - TypeScript SDK
-- MCP Adapter
+- MCP adapter improvements
 - EMCL key rotation
 
-### Future
+**Future (Optional)**
 
-- Multi-agent planner (research / explicitly optional)
+- Multi-agent planning layer (research)
 - Trust-scored routing
 
 ---
 
-## 👤 Author
+## Author
 
 **Balachandar Manikandan**
 
 ---
 
-## 📍 License
+## License
 
-MIT License — Open source & commercial friendly.
+MIT License — open-source
 
 ---
 
-#### 🔐 Keywords
+### Keywords
 
-AI agent execution runtime, deterministic execution semantics,
-intent routing, explicit fallback chains, debuggable LLM systems,
-agent routing engine, execution traceability, replayable agent flows,
-MCP-compatible runtime, MCP tool execution, Model Context Protocol,
-distributed agent execution, transport-agnostic agent runtime,
-secure agent communication, EMCL encrypted envelopes,
-ZeroMQ agent transport, WebSocket agent transport,
-production AI infrastructure, LLM orchestration runtime
+Deterministic execution runtime, intent routing, explicit fallback chains, replayable agent workflows, debuggable LLM systems, execution recording, WAL-backed recovery, MCP-compatible runtime, EMCL-secured agent communication, transport-agnostic AI infrastructure.
