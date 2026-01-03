@@ -30,6 +30,11 @@ from .transport import (
 from .emcl import (
     EMCLEnvelope,
 )
+from .enums import (
+    Priority,
+    RoutingStrategy,
+    ErrorCode,
+)
 
 __all__ = [
     # Intent
@@ -56,4 +61,8 @@ __all__ = [
     "TransportEnvelope",
     # EMCL
     "EMCLEnvelope",
+    # Enums
+    "Priority",
+    "RoutingStrategy",
+    "ErrorCode",
 ]

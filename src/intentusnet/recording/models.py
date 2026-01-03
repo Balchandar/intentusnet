@@ -101,6 +101,7 @@ class ExecutionHeader:
     createdUtcIso: str
     envelopeHash: str
     replayable: bool = True
+    replayableReason: Optional[str] = None
 
 
 @dataclass
@@ -164,6 +165,7 @@ class ExecutionRecord:
                 "createdUtcIso": self.header.createdUtcIso,
                 "envelopeHash": self.header.envelopeHash,
                 "replayable": self.header.replayable,
+                "replayableReason": self.header.replayableReason,
             },
             "envelope": self.envelope,
             "routerDecision": self.routerDecision,
@@ -190,6 +192,7 @@ class ExecutionRecord:
             createdUtcIso=header_data["createdUtcIso"],
             envelopeHash=header_data["envelopeHash"],
             replayable=header_data.get("replayable", True),
+            replayableReason=header_data.get("replayableReason", None),
         )
 
         events = [
