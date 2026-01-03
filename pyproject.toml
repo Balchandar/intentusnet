@@ -55,6 +55,9 @@ examples = [
   "aiohttp>=3.9.1"
 ]
 
+[project.scripts]
+intentusnet = "intentusnet.cli.main:main"
+
 # -------------------------------------------------
 # BUILD SYSTEM
 # -------------------------------------------------
