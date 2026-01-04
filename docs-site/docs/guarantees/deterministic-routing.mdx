@@ -1,0 +1,272 @@
+---
+sidebar_position: 2
+title: Deterministic Routing
+description: Guarantees for deterministic agent selection in IntentusNet
+---
+
+# Deterministic Routing
+
+Deterministic routing is IntentusNet's foundational guarantee: given the same intent and set of available agents, the runtime always selects agents in the same order.
+
+## The Guarantee
+
+```
+GUARANTEE: For a given IntentEnvelope E and agent set A,
+           route(E, A) always produces the same ordering O.
+```
+
+This guarantee holds across:
+- Process restarts
+- Different machines (given same configuration)
+- Different times (agents don't age-out)
+
+## How Ordering Works
+
+Agent ordering is computed using a deterministic sort:
+
+```python
+def compute_ordering(agents: List[AgentDefinition]) -> List[AgentDefinition]:
+    return sorted(
+        agents,
+        key=lambda a: (
+            0 if a.nodeId is None else 1,  # Local agents first
+            a.nodePriority,                  # Lower priority wins
+            a.name                           # Lexicographic tiebreaker
+        )
+    )
+```
+
+### Ordering Criteria
+
+| Priority | Criterion | Description |
+|----------|-----------|-------------|
+| 1 | `nodeId == None` | Local agents preferred over remote |
+| 2 | `nodePriority` | Lower value = higher priority (default: 100) |
+| 3 | `name` | Lexicographic ordering for deterministic tiebreaker |
+
+### Example
+
+Given these agents:
+
+```python
+agents = [
+    AgentDefinition(name="agent-c", nodeId=None, nodePriority=100),
+    AgentDefinition(name="agent-a", nodeId="node-1", nodePriority=50),
+    AgentDefinition(name="agent-b", nodeId=None, nodePriority=100),
+]
+```
+
+Ordering result:
+
+```
+1. agent-b  (local, priority=100, 'b' < 'c')
+2. agent-c  (local, priority=100)
+3. agent-a  (remote, priority=50 — lower but remote)
+```
+
+## Routing Strategies
+
+IntentusNet supports four routing strategies, all deterministic:
+
+### DIRECT (Default)
+
+Selects the first agent after deterministic ordering:
+
+```python
+RoutingOptions(strategy=RoutingStrategy.DIRECT)
+# Uses first matching agent
+```
+
+Or targets a specific agent:
+
+```python
+RoutingOptions(
+    strategy=RoutingStrategy.DIRECT,
+    targetAgent="specific-agent"
+)
+# Bypasses ordering, uses named agent
+```
+
+### FALLBACK
+
+Tries agents in deterministic order until success:
+
+```python
+RoutingOptions(strategy=RoutingStrategy.FALLBACK)
+```
+
+Behavior:
+1. Try agent 1 → if success, return
+2. Try agent 2 → if success, return
+3. ...continue until success or exhausted
+4. If all fail, return last error
+
+**Key guarantee:** The fallback order is deterministic. Same intent → same try order.
+
+### BROADCAST
+
+Executes all agents sequentially in deterministic order:
+
+```python
+RoutingOptions(strategy=RoutingStrategy.BROADCAST)
+```
+
+Behavior:
+- All agents executed (failures don't stop execution)
+- Returns last successful response (or last error if all fail)
+- Order of execution is deterministic
+
+### PARALLEL
+
+Executes agents concurrently, returns first success:
+
+```python
+RoutingOptions(strategy=RoutingStrategy.PARALLEL)
+```
+
+:::warning Parallel Strategy Note
+While agent selection is deterministic, the **order of completion** may vary due to execution timing. The first successful completion wins, which may differ between runs.
+:::
+
+## What's NOT Guaranteed
+
+### Agent Internal Behavior
+
+IntentusNet guarantees which agent is selected, not what that agent does:
+
+```python
+# IntentusNet guarantees: agent-a is selected
+# IntentusNet does NOT guarantee: agent-a produces the same output
+```
+
+If your agent calls an LLM, the LLM's output may vary. IntentusNet records the output but doesn't control it.
+
+### Dynamic Agent Availability
+
+If an agent becomes unavailable between selection and execution:
+
+```python
+# Selection: [agent-a, agent-b, agent-c]
+# agent-a goes offline
+# Execution: AGENT_UNAVAILABLE error for agent-a
+```
+
+IntentusNet reports the failure; it doesn't silently skip to the next agent (unless using FALLBACK strategy).
+
+### Load Balancing
+
+IntentusNet does not load balance:
+
+```python
+# 1000 requests → all route to agent-a (deterministically)
+# NOT: 500 to agent-a, 500 to agent-b
+```
+
+For load balancing, use external infrastructure (Kubernetes, cloud LB, etc.).
+
+## Failure Modes
+
+| Scenario | Error Code | Description |
+|----------|------------|-------------|
+| No matching agents | `CAPABILITY_NOT_FOUND` | No agent handles this intent |
+| Target agent not found | `ROUTING_ERROR` | Named `targetAgent` not registered |
+| All fallbacks fail | Last error | Returns the error from final attempt |
+
+### Example: No Matching Agent
+
+```python
+envelope = IntentEnvelope(
+    intent=IntentRef(name="UnknownIntent", version="1.0"),
+    # ...
+)
+response = router.route_intent(envelope)
+# response.status == "error"
+# response.error.code == ErrorCode.CAPABILITY_NOT_FOUND
+```
+
+### Example: Fallback Exhaustion
+
+```python
+# Agents: [agent-a (fails), agent-b (fails), agent-c (fails)]
+response = router.route_intent(
+    envelope,
+    routing=RoutingOptions(strategy=RoutingStrategy.FALLBACK)
+)
+# response.status == "error"
+# response.error == last error from agent-c
+```
+
+## Configuring Priority
+
+Control routing order via agent configuration:
+
+```python
+# High priority agent (tried first)
+AgentDefinition(
+    name="primary-handler",
+    nodePriority=10,  # Lower = higher priority
+    nodeId=None,      # Local = tried before remote
+)
+
+# Low priority agent (fallback)
+AgentDefinition(
+    name="fallback-handler",
+    nodePriority=200,  # Higher = lower priority
+    nodeId=None,
+)
+```
+
+## Verifying Determinism
+
+Test routing determinism in your system:
+
+```python
+def test_routing_determinism():
+    runtime = IntentusRuntime()
+    # Register agents
+
+    envelope = create_test_envelope()
+
+    # Run 100 times
+    results = []
+    for _ in range(100):
+        response = runtime.router.route_intent(envelope)
+        results.append(response.metadata.get('selected_agent'))
+
+    # All should be identical
+    assert len(set(results)) == 1, f"Non-deterministic: {set(results)}"
+```
+
+## Trace Output
+
+Every routing decision produces a trace:
+
+```json
+{
+  "agent": "primary-handler",
+  "intent": "ProcessIntent",
+  "reason": "deterministic_match",
+  "timestamp": "2024-01-15T10:30:00.000Z"
+}
+```
+
+The `reason` field documents why this agent was selected:
+- `deterministic_match` — Standard ordering selection
+- `target_specified` — `targetAgent` was specified
+- `fallback_attempt` — Fallback after previous failure
+
+## Summary
+
+| Aspect | Guarantee |
+|--------|-----------|
+| Ordering | Deterministic: `(isLocal, nodePriority, name)` |
+| DIRECT strategy | First matching or specified target |
+| FALLBACK strategy | Deterministic try order |
+| BROADCAST strategy | Deterministic execution order |
+| Agent behavior | NOT guaranteed (agent's responsibility) |
+| Load balancing | NOT provided |
+
+## Next Steps
+
+- [Crash-Safe Execution](./crash-safe-execution) — How executions are recorded
+- [Failure Model](../architecture/failure-model) — Complete failure taxonomy

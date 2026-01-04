@@ -1,0 +1,265 @@
+---
+sidebar_position: 7
+title: Limitations
+description: Explicit limitations and non-goals of IntentusNet
+---
+
+# Limitations
+
+IntentusNet is explicit about what it doesn't do. This document lists current limitations, non-goals, and areas where you need external solutions.
+
+## Current Limitations (v1.3.x)
+
+These are limitations of the current implementation that may be addressed in future versions.
+
+### Synchronous Only
+
+IntentusNet's routing is synchronous:
+
+```python
+# This is how it works
+response = router.route_intent(envelope)  # Blocks until complete
+
+# NOT supported
+async def route():
+    response = await router.route_intent_async(envelope)  # Not available
+```
+
+**Implication:** For async applications, wrap in executor or use async transport layer.
+
+### Single-Process Runtime
+
+The runtime is designed for single-process execution:
+
+```python
+# Works
+runtime = IntentusRuntime()  # Single process
+
+# NOT supported
+cluster = IntentusCluster(nodes=["n1", "n2", "n3"])  # No clustering
+```
+
+**Implication:** For multi-node deployments, run separate runtimes with shared storage.
+
+### File-Based Persistence Only
+
+Execution records persist to files:
+
+```python
+# Supported
+store = FileExecutionStore(".intentusnet/records")
+
+# NOT built-in
+store = PostgresExecutionStore(connection_string)  # Not included
+store = RedisExecutionStore(redis_client)  # Not included
+```
+
+**Implication:** Implement custom store for production databases.
+
+### No Automatic Timeouts
+
+The runtime doesn't enforce agent timeouts:
+
+```python
+# No built-in timeout
+response = router.route_intent(envelope)  # May hang forever if agent hangs
+
+# You must handle externally
+import signal
+signal.alarm(30)  # Set external timeout
+```
+
+**Implication:** Implement timeout handling in your application layer or transport.
+
+### Shared Envelope in Parallel
+
+PARALLEL strategy shares envelope across threads:
+
+```python
+RoutingOptions(strategy=RoutingStrategy.PARALLEL)
+# All agents receive same envelope object
+# Mutations are NOT thread-safe
+```
+
+**Implication:** Don't mutate envelope in agents during parallel execution.
+
+### No Scheduling
+
+No built-in task scheduling:
+
+```python
+# NOT supported
+runtime.schedule(envelope, at="2024-01-16T10:00:00Z")
+runtime.schedule(envelope, every="1h")
+```
+
+**Implication:** Use external schedulers (cron, Celery, etc.).
+
+## Non-Goals
+
+These are deliberate design decisions, not implementation gaps.
+
+### Not an Agent Framework
+
+IntentusNet does not:
+
+- Define how agents think or reason
+- Provide prompt templates
+- Manage agent memory or state
+- Orchestrate complex workflows
+
+**Use instead:** LangChain, AutoGen, CrewAI, or similar.
+
+### Not an LLM Abstraction
+
+IntentusNet does not:
+
+- Call LLMs directly
+- Manage API keys
+- Handle token counting
+- Provide model fallbacks
+
+**Use instead:** LiteLLM, OpenAI SDK, Anthropic SDK, etc.
+
+### Not a Load Balancer
+
+IntentusNet does not:
+
+- Distribute load across agents
+- Scale agents based on demand
+- Route based on agent health metrics
+
+**Use instead:** Kubernetes, cloud load balancers, or service mesh.
+
+### Not an Authentication System
+
+IntentusNet does not:
+
+- Authenticate users or services
+- Manage tokens or sessions
+- Integrate with identity providers
+
+**Use instead:** OAuth2, JWT, your auth infrastructure.
+
+### Not a Transaction Manager
+
+IntentusNet does not:
+
+- Provide distributed transactions
+- Guarantee atomicity across agents
+- Rollback failed multi-step operations
+
+**Implication:** Design agents to be idempotent and handle partial failures.
+
+### No Automatic Retries
+
+IntentusNet does not automatically retry:
+
+```python
+# Agent fails
+response = router.route_intent(envelope)
+# response.status == "error"
+# NO automatic retry happens
+
+# Explicit retry via fallback
+RoutingOptions(strategy=RoutingStrategy.FALLBACK)
+# Tries next agent, but only once each
+```
+
+**Rationale:** Automatic retries hide failures and can cause duplicate side effects.
+
+## What You Need Externally
+
+| Need                | External Solution            |
+| ------------------- | ---------------------------- |
+| Authentication      | OAuth2/JWT + middleware      |
+| Rate limiting       | API gateway or policy engine |
+| Distributed storage | PostgreSQL, Redis, etc.      |
+| Async execution     | Celery, RQ, or async wrapper |
+| Load balancing      | Kubernetes, cloud LB         |
+| Secrets management  | Vault, cloud KMS             |
+| Monitoring          | Prometheus, Grafana          |
+| Log aggregation     | ELK, Loki, cloud logging     |
+
+## Known Issues
+
+### High-Frequency Recording Overhead
+
+Recording every execution has overhead:
+
+```
+Operations/sec | Overhead
+100            | ~1%
+1000           | ~5%
+10000          | ~15%
+```
+
+**Mitigation:** Sampling, async persistence, or disable for high-frequency ops.
+
+### Large Payload Storage
+
+Large payloads inflate record storage:
+
+```python
+# 10MB payload = 10MB record
+envelope.payload = large_binary_data  # Stored in record
+```
+
+**Mitigation:** Store payloads externally, reference by ID.
+
+### Clock Skew in Distributed Deployments
+
+Timestamps rely on system clock:
+
+```
+Node A: 2024-01-15T10:30:00Z
+Node B: 2024-01-15T10:30:05Z  # 5 second skew
+```
+
+**Mitigation:** Use NTP, or use logical clocks (sequence numbers).
+
+## Future Considerations
+
+These are areas under consideration for future versions:
+
+| Area                 | Status                                  |
+| -------------------- | --------------------------------------- |
+| Async routing        | Under consideration                     |
+| Database stores      | Community plugins welcome               |
+| Distributed runtime  | Requires architectural review           |
+| Built-in timeouts    | Planned for 0.4.x                       |
+| WAL-backed recording | Design complete, implementation pending |
+
+## Honest Assessment
+
+IntentusNet is good for:
+
+- Deterministic agent routing
+- Execution auditing and replay
+- Policy-based filtering
+- CLI-first operations
+
+IntentusNet is not good for:
+
+- Real-time, low-latency systems
+- High-frequency trading-style workloads
+- Systems requiring distributed consensus
+- Fully managed agent orchestration
+
+## Summary
+
+| Category               | Status                  |
+| ---------------------- | ----------------------- |
+| Sync-only              | Limitation (may change) |
+| Single-process         | Limitation (may change) |
+| File persistence       | Limitation (may change) |
+| No auto-timeout        | Limitation (planned)    |
+| Not an agent framework | Non-goal                |
+| Not a load balancer    | Non-goal                |
+| Not an auth system     | Non-goal                |
+| No auto-retries        | Non-goal                |
+
+## Next Steps
+
+- [Production Limitations](../production/limitations) — Operational constraints
+- [Architecture Overview](../architecture/overview) — Understand design decisions

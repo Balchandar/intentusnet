@@ -1,0 +1,239 @@
+---
+sidebar_position: 2
+title: Quickstart
+description: Run your first intent with IntentusNet in 5 minutes
+---
+
+# Quickstart
+
+Get IntentusNet running in 5 minutes with this quickstart guide.
+
+## Prerequisites
+
+- Python 3.9+
+- IntentusNet installed (`pip install intentusnet`)
+
+## Step 1: Create a Simple Agent
+
+Create `my_agent.py`:
+
+```python
+from intentusnet import (
+    IntentusRuntime,
+    BaseAgent,
+    IntentEnvelope,
+    AgentResponse,
+    AgentDefinition,
+    AgentIdentity,
+    AgentEndpoint,
+    AgentHealth,
+    AgentRuntimeInfo,
+    Capability,
+    IntentRef,
+)
+
+# Define an agent that processes text
+class TextProcessorAgent(BaseAgent):
+    def handle_intent(self, env: IntentEnvelope) -> AgentResponse:
+        text = env.payload.get("text", "")
+        processed = {
+            "original": text,
+            "length": len(text),
+            "words": len(text.split()),
+            "uppercase": text.upper()
+        }
+        return AgentResponse.success(processed, agent=self.definition.name)
+
+# Create agent definition
+def create_text_processor_definition() -> AgentDefinition:
+    return AgentDefinition(
+        name="text-processor",
+        version="1.0",
+        identity=AgentIdentity(agentId="text-processor", tenantId="default"),
+        capabilities=[
+            Capability(
+                intent=IntentRef(name="ProcessTextIntent", version="1.0"),
+                inputSchema={"text": "string"},
+                outputSchema={"length": "number", "words": "number"}
+            )
+        ],
+        endpoint=AgentEndpoint(type="local", address=""),
+        health=AgentHealth(status="healthy"),
+        runtime=AgentRuntimeInfo(language="python", environment="local")
+    )
+```
+
+## Step 2: Run the Intent
+
+Add to `my_agent.py`:
+
+```python
+from intentusnet import (
+    IntentContext,
+    IntentMetadata,
+    RoutingOptions,
+    Priority,
+)
+from datetime import datetime
+
+def main():
+    # Create runtime with recording enabled
+    runtime = IntentusRuntime(enable_recording=True)
+
+    # Create and register agent
+    definition = create_text_processor_definition()
+    agent = TextProcessorAgent(definition, runtime.router)
+    runtime.registry.register(definition)
+
+    # Bind agent to router
+    runtime.router._agents[definition.name] = agent
+
+    # Create intent envelope
+    envelope = IntentEnvelope(
+        version="1.0",
+        intent=IntentRef(name="ProcessTextIntent", version="1.0"),
+        payload={"text": "Hello, IntentusNet! This is a test message."},
+        context=IntentContext(
+            sourceAgent="quickstart",
+            timestamp=datetime.utcnow().isoformat(),
+            priority=Priority.NORMAL,
+            tags=["quickstart", "demo"]
+        ),
+        metadata=IntentMetadata(
+            requestId="req-quickstart-001",
+            source="quickstart-script",
+            createdAt=datetime.utcnow().isoformat(),
+            traceId="trace-quickstart-001",
+            identityChain=[]
+        ),
+        routing=RoutingOptions()
+    )
+
+    # Execute intent
+    print("Executing intent...")
+    response = runtime.router.route_intent(envelope)
+
+    # Print results
+    print(f"\nStatus: {response.status}")
+    print(f"Execution ID: {response.metadata.get('execution_id', 'N/A')}")
+    print(f"Agent: {response.metadata.get('agent', 'N/A')}")
+    print(f"\nPayload:")
+    import json
+    print(json.dumps(response.payload, indent=2))
+
+if __name__ == "__main__":
+    main()
+```
+
+## Step 3: Run It
+
+```bash
+python my_agent.py
+```
+
+Expected output:
+
+```
+Executing intent...
+
+Status: success
+Execution ID: exec-a1b2c3d4e5f6
+Agent: text-processor
+
+Payload:
+{
+  "original": "Hello, IntentusNet! This is a test message.",
+  "length": 44,
+  "words": 7,
+  "uppercase": "HELLO, INTENTUSNET! THIS IS A TEST MESSAGE."
+}
+```
+
+## Step 4: Inspect the Execution
+
+Check the recorded execution:
+
+```bash
+ls -la .intentusnet/records/
+```
+
+View the execution record:
+
+```bash
+cat .intentusnet/records/exec-*.json | python -m json.tool
+```
+
+Output:
+
+```json
+{
+  "header": {
+    "executionId": "exec-a1b2c3d4e5f6",
+    "createdUtcIso": "2024-01-15T10:30:00.123456Z",
+    "envelopeHash": "sha256:e3b0c44298fc1c149afbf4c8996fb924...",
+    "replayable": true,
+    "replayableReason": null
+  },
+  "envelope": {...},
+  "routerDecision": {
+    "agent": "text-processor",
+    "intent": "ProcessTextIntent",
+    "reason": "deterministic_match"
+  },
+  "events": [
+    {"seq": 1, "type": "INTENT_RECEIVED", ...},
+    {"seq": 2, "type": "AGENT_ATTEMPT_START", ...},
+    {"seq": 3, "type": "AGENT_ATTEMPT_END", ...},
+    {"seq": 4, "type": "ROUTER_DECISION", ...},
+    {"seq": 5, "type": "FINAL_RESPONSE", ...}
+  ],
+  "finalResponse": {...}
+}
+```
+
+## Step 5: Replay the Execution
+
+Replay returns the recorded output without re-execution:
+
+```python
+from intentusnet import FileExecutionStore, ReplayEngine
+
+# Load the execution record
+store = FileExecutionStore(".intentusnet/records")
+records = list(store.list_all())
+record = store.load(records[0])  # Load first record
+
+# Create replay engine
+engine = ReplayEngine(record)
+
+# Check if replayable
+is_ok, reason = engine.is_replayable()
+print(f"Replayable: {is_ok}")
+
+if is_ok:
+    result = engine.replay()
+    print(f"Replayed payload: {result.payload}")
+```
+
+## What Just Happened?
+
+1. **Agent Registration**: You created and registered an agent with a capability
+2. **Deterministic Routing**: The router matched your intent to the agent
+3. **Execution Recording**: Every step was recorded with stable hashes
+4. **Replay Capability**: The recorded execution can be replayed without re-running
+
+## Key Concepts Demonstrated
+
+| Concept | What You Saw |
+|---------|--------------|
+| IntentEnvelope | Structured request with metadata |
+| AgentResponse | Standardized response format |
+| Execution ID | Unique identifier for the execution |
+| Recording | Automatic capture of execution |
+| Replay | Return recorded output |
+
+## Next Steps
+
+- [Walkthrough](./walkthrough) — Complete example with policy filtering and crash recovery
+- [CLI Reference](../cli/overview) — Command-line tools for inspection and replay
+- [Guarantees](../guarantees/overview) — Understand what IntentusNet guarantees

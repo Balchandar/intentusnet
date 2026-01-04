@@ -1,0 +1,345 @@
+---
+sidebar_position: 4
+title: "Demo: Model Swap Prevention"
+description: Deterministic routing prevents behavioral drift from model changes
+---
+
+# Demo: Model Swap Prevention
+
+This demo shows how IntentusNet's deterministic routing and execution recording prevent unexpected behavioral changes when underlying models are updated.
+
+## Scenario
+
+A content moderation system uses multiple AI models. Overnight, one model is updated to a new version. Without IntentusNet, this could silently change routing decisions and moderation outcomes.
+
+## The Problem: Silent Model Drift
+
+```
+                    Monday                          Tuesday
+                    ──────                          ───────
+
+    Request ─────────────────────────────────────────────────
+         │                                              │
+         ▼                                              ▼
+    ┌─────────────┐                            ┌─────────────┐
+    │   Router    │                            │   Router    │
+    │  (v1.0)     │                            │  (v1.0)     │
+    └──────┬──────┘                            └──────┬──────┘
+           │                                          │
+           ▼                                          ▼
+    ┌─────────────┐                            ┌─────────────┐
+    │  Model A    │ ◄── Selected               │  Model B    │ ◄── Selected
+    │  (GPT-4)    │                            │  (GPT-4.5)  │     (Model updated!)
+    └─────────────┘                            └─────────────┘
+
+    Result: "SAFE"                             Result: "FLAGGED"
+
+    Same content, different result. No log of change.
+```
+
+## IntentusNet Solution
+
+### 1. Deterministic Agent Selection
+
+```python
+# Agents registered with explicit priorities
+agents = [
+    AgentDefinition(
+        name="moderator-gpt4",
+        nodePriority=10,  # Primary
+        capabilities=[Capability(intent=IntentRef(name="ModerateIntent"))]
+    ),
+    AgentDefinition(
+        name="moderator-gpt4-turbo",
+        nodePriority=20,  # Secondary
+        capabilities=[Capability(intent=IntentRef(name="ModerateIntent"))]
+    ),
+    AgentDefinition(
+        name="moderator-claude",
+        nodePriority=30,  # Tertiary
+        capabilities=[Capability(intent=IntentRef(name="ModerateIntent"))]
+    ),
+]
+
+# Selection is ALWAYS deterministic:
+# moderator-gpt4 → moderator-gpt4-turbo → moderator-claude
+```
+
+### 2. Recorded Routing Decisions
+
+Every request records which agent was selected:
+
+```json
+{
+  "execution_id": "exec-mod-001",
+  "routerDecision": {
+    "agent": "moderator-gpt4",
+    "intent": "ModerateIntent",
+    "reason": "deterministic_match",
+    "priority_order": [
+      "moderator-gpt4",
+      "moderator-gpt4-turbo",
+      "moderator-claude"
+    ]
+  }
+}
+```
+
+### 3. Behavioral Comparison
+
+When a model is updated, compare outputs:
+
+```python
+# Monday's execution
+monday_result = replay("exec-mod-001")
+# {"content_id": "post-123", "decision": "SAFE", "confidence": 0.95}
+
+# Tuesday: same content, new model
+tuesday_envelope = create_envelope(content="same content")
+tuesday_result = runtime.router.route_intent(tuesday_envelope)
+
+# Compare
+if monday_result.payload != tuesday_result.payload:
+    alert("Behavioral drift detected!")
+    log_drift(
+        content="post-123",
+        before=monday_result.payload,
+        after=tuesday_result.payload,
+        model_change="gpt4 → gpt4.5"
+    )
+```
+
+## Input Intent
+
+```json
+{
+  "intent": {
+    "name": "ModerateIntent",
+    "version": "1.0"
+  },
+  "payload": {
+    "content_id": "post-123",
+    "content": "This is the content to moderate...",
+    "context": {
+      "platform": "social",
+      "user_age_group": "13-17"
+    }
+  }
+}
+```
+
+## Route Result (Consistent)
+
+```json
+{
+  "routing": {
+    "strategy": "DIRECT",
+    "selected_agent": "moderator-gpt4",
+    "selection_reason": "deterministic_match",
+    "available_agents": [
+      {"name": "moderator-gpt4", "priority": 10},
+      {"name": "moderator-gpt4-turbo", "priority": 20},
+      {"name": "moderator-claude", "priority": 30}
+    ]
+  }
+}
+```
+
+## Execution Trace
+
+### Monday (Before Model Update)
+
+```json
+{
+  "execution_id": "exec-mod-monday-001",
+  "events": [
+    {"seq": 1, "type": "INTENT_RECEIVED"},
+    {"seq": 2, "type": "AGENT_ATTEMPT_START", "payload": {"agent": "moderator-gpt4"}},
+    {"seq": 3, "type": "AGENT_ATTEMPT_END", "payload": {
+      "agent": "moderator-gpt4",
+      "status": "success",
+      "model_version": "gpt-4-0613"
+    }},
+    {"seq": 4, "type": "FINAL_RESPONSE"}
+  ],
+  "finalResponse": {
+    "payload": {
+      "decision": "SAFE",
+      "confidence": 0.95,
+      "flags": []
+    }
+  }
+}
+```
+
+### Tuesday (After Model Update)
+
+If routing were non-deterministic, a different agent might be selected. With IntentusNet:
+
+```json
+{
+  "execution_id": "exec-mod-tuesday-001",
+  "events": [
+    {"seq": 1, "type": "INTENT_RECEIVED"},
+    {"seq": 2, "type": "AGENT_ATTEMPT_START", "payload": {"agent": "moderator-gpt4"}},
+    {"seq": 3, "type": "AGENT_ATTEMPT_END", "payload": {
+      "agent": "moderator-gpt4",
+      "status": "success",
+      "model_version": "gpt-4-0125-preview"
+    }},
+    {"seq": 4, "type": "FINAL_RESPONSE"}
+  ],
+  "finalResponse": {
+    "payload": {
+      "decision": "FLAGGED",
+      "confidence": 0.87,
+      "flags": ["potential_harmful_content"]
+    }
+  }
+}
+```
+
+## Drift Detection
+
+```python
+def detect_drift(before_id: str, after_id: str) -> dict:
+    store = FileExecutionStore(".intentusnet/records")
+
+    before = store.load(before_id)
+    after = store.load(after_id)
+
+    # Same agent selected?
+    before_agent = before.routerDecision["agent"]
+    after_agent = after.routerDecision["agent"]
+
+    agent_changed = before_agent != after_agent
+
+    # Same output?
+    before_decision = before.finalResponse["payload"]["decision"]
+    after_decision = after.finalResponse["payload"]["decision"]
+
+    output_changed = before_decision != after_decision
+
+    return {
+        "routing_drift": agent_changed,
+        "behavioral_drift": output_changed,
+        "details": {
+            "before": {
+                "agent": before_agent,
+                "decision": before_decision,
+                "model": before.events[2].payload.get("model_version")
+            },
+            "after": {
+                "agent": after_agent,
+                "decision": after_decision,
+                "model": after.events[2].payload.get("model_version")
+            }
+        }
+    }
+```
+
+### Drift Report
+
+```json
+{
+  "routing_drift": false,
+  "behavioral_drift": true,
+  "details": {
+    "before": {
+      "agent": "moderator-gpt4",
+      "decision": "SAFE",
+      "model": "gpt-4-0613"
+    },
+    "after": {
+      "agent": "moderator-gpt4",
+      "decision": "FLAGGED",
+      "model": "gpt-4-0125-preview"
+    }
+  },
+  "alert": "Same agent, different output. Model was updated."
+}
+```
+
+## Replay for Verification
+
+```bash
+# Replay Monday's execution
+$ intentusnet replay exec-mod-monday-001
+{
+  "from_replay": true,
+  "payload": {
+    "decision": "SAFE",
+    "confidence": 0.95
+  }
+}
+
+# This is what the system returned on Monday
+# Even if the model changed, replay returns the recorded output
+```
+
+## Key Points
+
+| Aspect | Behavior |
+|--------|----------|
+| Agent selection | Deterministic by priority |
+| Model version | Recorded in execution trace |
+| Output | Recorded exactly as produced |
+| Drift detection | Compare recorded outputs |
+| Replay | Returns original output (not re-executed) |
+
+## Preventing Surprise Changes
+
+### Strategy 1: Explicit Version Pinning
+
+```python
+# Pin to specific model version in agent config
+AgentDefinition(
+    name="moderator-gpt4-0613",  # Version in name
+    capabilities=[...],
+    runtime=AgentRuntimeInfo(
+        model_version="gpt-4-0613"  # Explicit version
+    )
+)
+```
+
+### Strategy 2: Gradual Rollout
+
+```python
+# Deploy new model with lower priority
+AgentDefinition(
+    name="moderator-gpt4-new",
+    nodePriority=100,  # Lower priority = fallback only
+    ...
+)
+
+# Gradually increase priority after validation
+```
+
+### Strategy 3: Shadow Mode
+
+```python
+# Run new model in shadow mode
+response = runtime.route_intent(envelope)
+shadow = runtime.route_intent(envelope, routing=RoutingOptions(
+    targetAgent="moderator-gpt4-new"
+))
+
+# Compare but don't use shadow result
+if response.payload != shadow.payload:
+    log_shadow_drift(response, shadow)
+```
+
+## Summary
+
+| Protection | How IntentusNet Helps |
+|------------|----------------------|
+| Routing stability | Deterministic priority-based selection |
+| Change detection | Recorded model versions in traces |
+| Output stability | Replay returns original output |
+| Audit | Full execution history |
+| Rollback | Replay historical behavior |
+
+## See Also
+
+- [Deterministic Routing](../guarantees/deterministic-routing) — Routing guarantees
+- [Deterministic Routing Patterns](../advanced/deterministic-routing-patterns) — Advanced patterns

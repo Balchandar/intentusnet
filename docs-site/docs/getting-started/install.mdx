@@ -1,0 +1,214 @@
+---
+sidebar_position: 1
+title: Installation
+description: Install IntentusNet and verify the installation
+---
+
+# Installation
+
+IntentusNet is distributed as a Python package. This guide covers installation options and verification.
+
+## Requirements
+
+- **Python**: 3.9 or higher
+- **Operating System**: Linux, macOS, Windows
+- **Optional**: Docker for containerized deployments
+
+## Quick Install
+
+Install from PyPI:
+
+```bash
+pip install intentusnet
+```
+
+Verify installation:
+
+```bash
+python -c "import intentusnet; print(intentusnet.__version__)"
+# Output: 1.3.0
+```
+
+## Installation Options
+
+### Standard Installation
+
+```bash
+pip install intentusnet
+```
+
+Includes core runtime, file-based storage, and in-process transport.
+
+### With HTTP Transport
+
+```bash
+pip install intentusnet[http]
+```
+
+Adds FastAPI-based HTTP server and client.
+
+### With All Transports
+
+```bash
+pip install intentusnet[all]
+```
+
+Includes HTTP, WebSocket, and ZeroMQ transports.
+
+### Development Installation
+
+```bash
+pip install intentusnet[dev]
+```
+
+Adds testing tools: pytest, mypy, black, ruff.
+
+## From Source
+
+Clone and install from source:
+
+```bash
+git clone https://github.com/Balchandar/intentusnet.git
+cd intentusnet
+pip install -e ".[dev]"
+```
+
+## Docker
+
+Pull the official image:
+
+```bash
+docker pull intentusnet/runtime:1.3.0
+```
+
+Run a container:
+
+```bash
+docker run -it --rm \
+  -v $(pwd)/config:/app/config \
+  -v $(pwd)/records:/app/.intentusnet/records \
+  intentusnet/runtime:1.3.0
+```
+
+## Verify Installation
+
+### Check Version
+
+```bash
+python -c "import intentusnet; print(intentusnet.__version__)"
+```
+
+### Run Self-Test
+
+```python
+from intentusnet import IntentusRuntime, BaseAgent, AgentResponse
+
+# Create minimal runtime
+runtime = IntentusRuntime()
+
+# Verify core components
+assert runtime.router is not None
+assert runtime.registry is not None
+
+print("IntentusNet installed correctly!")
+```
+
+### Check Dependencies
+
+```bash
+pip show intentusnet
+```
+
+Expected output:
+
+```
+Name: intentusnet
+Version: 1.3.0
+Summary: Deterministic execution runtime for multi-agent systems
+Requires: cryptography, websockets, pyzmq, fastapi, uvicorn, python-dateutil
+```
+
+## Configuration
+
+IntentusNet uses sensible defaults. Optional configuration:
+
+### Environment Variables
+
+```bash
+# Execution record storage path
+export INTENTUSNET_RECORDS_PATH=".intentusnet/records"
+
+# Enable debug logging
+export INTENTUSNET_LOG_LEVEL="DEBUG"
+
+# Disable recording (for high-frequency operations)
+export INTENTUSNET_RECORDING_ENABLED="false"
+```
+
+### Programmatic Configuration
+
+```python
+from intentusnet import IntentusRuntime
+
+runtime = IntentusRuntime(
+    enable_recording=True,
+    records_path=".intentusnet/records",
+    log_level="INFO"
+)
+```
+
+## Directory Structure
+
+After installation and first run:
+
+```
+your-project/
+├── .intentusnet/
+│   └── records/           # Execution records
+│       ├── exec-a1b2c3d4.json
+│       └── ...
+└── your_code.py
+```
+
+## Troubleshooting
+
+### Import Error
+
+```
+ModuleNotFoundError: No module named 'intentusnet'
+```
+
+**Solution**: Verify installation: `pip list | grep intentusnet`
+
+### Version Mismatch
+
+```
+AttributeError: module 'intentusnet' has no attribute 'IntentusRuntime'
+```
+
+**Solution**: Upgrade to latest: `pip install --upgrade intentusnet`
+
+### Permission Error
+
+```
+PermissionError: [Errno 13] Permission denied: '.intentusnet/records'
+```
+
+**Solution**: Ensure write permissions or set custom path:
+
+```python
+runtime = IntentusRuntime(records_path="/tmp/intentusnet/records")
+```
+
+### Missing Optional Dependencies
+
+```
+ImportError: ZeroMQ transport requires pyzmq
+```
+
+**Solution**: Install with extras: `pip install intentusnet[all]`
+
+## Next Steps
+
+- [Quickstart](./quickstart) — Run your first intent
+- [Walkthrough](./walkthrough) — Complete example with policy filtering and crash recovery

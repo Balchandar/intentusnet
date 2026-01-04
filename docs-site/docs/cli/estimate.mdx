@@ -1,0 +1,266 @@
+---
+sidebar_position: 5
+title: intentusnet estimate
+description: Estimate execution cost and resources before running
+---
+
+# intentusnet estimate
+
+Estimate the cost, resources, and time for an intent execution before running it.
+
+## Synopsis
+
+```bash
+intentusnet estimate [options]
+```
+
+## Options
+
+| Option | Description | Required |
+|--------|-------------|----------|
+| `--intent NAME` | Intent name to estimate | Yes |
+| `--payload JSON` | JSON payload (inline or @file) | No |
+| `--strategy STRATEGY` | Routing strategy to estimate | No |
+| `--include-fallbacks` | Include fallback agent estimates | No |
+| `--budget AMOUNT` | Check against budget limit | No |
+
+## Examples
+
+### Basic Estimate
+
+```bash
+intentusnet estimate --intent ProcessIntent --payload '{"document_id": "doc-123"}'
+```
+
+Output:
+
+```json
+{
+  "intent": "ProcessIntent",
+  "estimated_agent": "processor-a",
+  "estimates": {
+    "time_ms": {
+      "min": 100,
+      "max": 500,
+      "typical": 200
+    },
+    "cost": {
+      "currency": "USD",
+      "min": 0.001,
+      "max": 0.005,
+      "typical": 0.002
+    },
+    "resources": {
+      "memory_mb": 256,
+      "cpu_units": 0.5
+    }
+  },
+  "confidence": "high",
+  "based_on": "historical_data",
+  "sample_size": 150
+}
+```
+
+### Include Fallback Estimates
+
+```bash
+intentusnet estimate --intent ProcessIntent --strategy fallback --include-fallbacks
+```
+
+```json
+{
+  "intent": "ProcessIntent",
+  "strategy": "FALLBACK",
+  "primary_agent": {
+    "name": "processor-a",
+    "estimates": {
+      "time_ms": {"typical": 200},
+      "cost": {"typical": 0.002}
+    }
+  },
+  "fallback_agents": [
+    {
+      "name": "processor-b",
+      "estimates": {
+        "time_ms": {"typical": 350},
+        "cost": {"typical": 0.003}
+      }
+    },
+    {
+      "name": "processor-c",
+      "estimates": {
+        "time_ms": {"typical": 500},
+        "cost": {"typical": 0.004}
+      }
+    }
+  ],
+  "worst_case": {
+    "time_ms": 1050,
+    "cost": 0.009
+  }
+}
+```
+
+### Budget Check
+
+```bash
+intentusnet estimate --intent ExpensiveIntent --payload @large.json --budget 0.01
+```
+
+Within budget:
+
+```json
+{
+  "intent": "ExpensiveIntent",
+  "estimates": {
+    "cost": {"typical": 0.005}
+  },
+  "budget": {
+    "limit": 0.01,
+    "estimated": 0.005,
+    "within_budget": true,
+    "margin": 0.005
+  }
+}
+```
+
+Over budget:
+
+```json
+{
+  "intent": "ExpensiveIntent",
+  "estimates": {
+    "cost": {"typical": 0.015}
+  },
+  "budget": {
+    "limit": 0.01,
+    "estimated": 0.015,
+    "within_budget": false,
+    "overage": 0.005
+  }
+}
+```
+
+Exit code: `1` when over budget
+
+### Payload Size Estimate
+
+```bash
+intentusnet estimate --intent ProcessIntent --payload @large_document.json
+```
+
+```json
+{
+  "intent": "ProcessIntent",
+  "payload_analysis": {
+    "size_bytes": 1048576,
+    "size_human": "1 MB",
+    "field_count": 150,
+    "max_field_size": 524288
+  },
+  "estimates": {
+    "time_ms": {
+      "typical": 2000,
+      "note": "Larger payload increases processing time"
+    }
+  },
+  "warnings": [
+    "Payload size exceeds 100KB - consider chunking"
+  ]
+}
+```
+
+## Estimate Sources
+
+Estimates are based on:
+
+| Source | Description |
+|--------|-------------|
+| `historical_data` | Past executions of same intent |
+| `agent_metadata` | Agent-declared estimates |
+| `payload_heuristic` | Estimated from payload size |
+| `default` | Default values (low confidence) |
+
+## Confidence Levels
+
+| Level | Meaning |
+|-------|---------|
+| `high` | Based on 100+ similar executions |
+| `medium` | Based on 10-100 similar executions |
+| `low` | Based on < 10 executions or heuristics |
+| `unknown` | No data available, using defaults |
+
+## Use Cases
+
+### Pre-Execution Validation
+
+```bash
+# Check before running expensive operation
+ESTIMATE=$(intentusnet estimate --intent MLTraining --payload @config.json)
+COST=$(echo "$ESTIMATE" | jq '.estimates.cost.typical')
+
+if (( $(echo "$COST > 10.00" | bc -l) )); then
+    echo "Warning: Estimated cost is $COST"
+    read -p "Continue? [y/N] " confirm
+    [ "$confirm" = "y" ] || exit 1
+fi
+
+intentusnet run --intent MLTraining --payload @config.json
+```
+
+### Budget Management
+
+```bash
+# Enforce budget limits
+intentusnet estimate --intent ProcessIntent --payload @data.json --budget 0.05
+if [ $? -eq 0 ]; then
+    intentusnet run --intent ProcessIntent --payload @data.json
+else
+    echo "Operation exceeds budget"
+fi
+```
+
+### Capacity Planning
+
+```bash
+# Estimate batch job resources
+for file in data/*.json; do
+    intentusnet estimate --intent ProcessIntent --payload @$file --format json
+done | jq -s '
+  {
+    total_time_ms: [.[].estimates.time_ms.typical] | add,
+    total_cost: [.[].estimates.cost.typical] | add,
+    file_count: length
+  }
+'
+```
+
+## Exit Codes
+
+| Code | Meaning |
+|------|---------|
+| 0 | Success (or within budget) |
+| 1 | Over budget / estimation warning |
+| 2 | Invalid input |
+| 3 | No agent found |
+
+## Limitations
+
+:::note Design Consideration
+Cost estimation accuracy depends on historical data availability. For new intents or agents with limited history, estimates use heuristics and have lower confidence.
+:::
+
+**What estimates include:**
+- Agent processing time
+- Declared resource requirements
+- Historical patterns
+
+**What estimates don't include:**
+- External API costs (LLM calls, etc.)
+- Network latency variance
+- Cold start delays
+
+## See Also
+
+- [`intentusnet run`](./run) — Execute after estimation
+- [Cost Estimation](../advanced/cost-estimation) — Advanced cost estimation

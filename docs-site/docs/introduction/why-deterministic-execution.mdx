@@ -1,0 +1,206 @@
+---
+sidebar_position: 2
+title: Why Deterministic Execution Matters
+description: The case for deterministic execution in production AI systems
+---
+
+# Why Deterministic Execution Matters
+
+Multi-agent AI systems introduce a class of failures that traditional software patterns don't address. This document explains why deterministic execution is not optional for production systems.
+
+## The Non-Determinism Problem
+
+Consider a simple multi-agent scenario:
+
+```
+User Intent: "Summarize the quarterly report and send to stakeholders"
+```
+
+This intent might route to:
+1. A document processing agent
+2. A summarization agent
+3. An email sending agent
+
+In a non-deterministic system, any of these can happen:
+
+| Run | Selected Agent | Reason |
+|-----|---------------|--------|
+| 1 | `summarizer-v1` | Random selection |
+| 2 | `summarizer-v2` | Model update changed preference |
+| 3 | `summarizer-v1` | Race condition resolved differently |
+| 4 | `email-agent` | Capability matching changed |
+
+**The same input produces different execution paths.** This breaks:
+
+- Debugging ("Why did run 3 fail but run 2 succeed?")
+- Compliance ("Which agent processed the PII data?")
+- Testing ("This test passed yesterday, why does it fail today?")
+- Incident response ("What exactly happened at 3:47 AM?")
+
+## Real-World Failure Scenarios
+
+### Scenario 1: Silent Agent Swap
+
+```
+Monday:    Intent → agent-A (works correctly)
+Tuesday:   Model updated, confidence scores shift
+Wednesday: Intent → agent-B (produces different output)
+           No error. No log. No way to know why.
+```
+
+**Impact:** Users report incorrect outputs, but logs show "success". Engineering has no trail to follow.
+
+### Scenario 2: Crash During Multi-Step Execution
+
+```
+Step 1: Debit customer account ✓
+Step 2: Credit merchant account → CRASH
+Step 3: Send confirmation (never reached)
+```
+
+**Impact:** Money debited but never credited. On restart:
+- Should we retry step 2? (What if it partially succeeded?)
+- Should we rollback step 1? (What if rollback fails?)
+- What's the current state? (Undefined)
+
+### Scenario 3: The Flaky Test
+
+```python
+def test_agent_routing():
+    response = runtime.execute(intent)
+    assert response.agent == "expected-agent"  # Flaky!
+```
+
+**Impact:** Test passes 90% of the time. CI/CD becomes unreliable. Teams learn to "just re-run" failures.
+
+### Scenario 4: The Impossible Bug Report
+
+```
+Customer: "The system charged me twice"
+Support:  "Let me check the logs"
+Logs:     Single successful execution recorded
+Reality:  Non-deterministic retry created a second execution
+          with different ID, invisible to basic log search
+```
+
+## What Deterministic Execution Guarantees
+
+IntentusNet eliminates these failure modes by providing:
+
+### 1. Ordering Stability
+
+Given the same set of agents and the same intent:
+
+```
+Ordering = sort(agents, key=(isLocal DESC, nodePriority ASC, name ASC))
+```
+
+This ordering is:
+- Computed at runtime from explicit configuration
+- Never influenced by model outputs or timing
+- Reproducible across restarts
+
+### 2. Single Response Semantics
+
+Every intent execution produces exactly one `AgentResponse`:
+
+```python
+response = router.route_intent(envelope)
+# response is ALWAYS:
+# - AgentResponse(status="success", ...) OR
+# - AgentResponse(status="error", error=ErrorInfo(...))
+# Never: thrown exception, null, undefined, or multiple responses
+```
+
+### 3. Recorded Execution Path
+
+Every execution produces a record:
+
+```json
+{
+  "execution_id": "exec-a1b2c3d4",
+  "envelope_hash": "sha256:e3b0c44298fc...",
+  "router_decision": {
+    "agent": "summarizer-v1",
+    "intent": "SummarizeIntent",
+    "reason": "deterministic_match"
+  },
+  "events": [
+    {"seq": 1, "type": "INTENT_RECEIVED"},
+    {"seq": 2, "type": "AGENT_ATTEMPT_START"},
+    {"seq": 3, "type": "AGENT_ATTEMPT_END"}
+  ]
+}
+```
+
+### 4. Replay Without Re-Execution
+
+```python
+# Original execution
+response1 = runtime.execute(intent)  # Calls model
+
+# Replay
+response2 = runtime.replay(execution_id)  # Returns recorded output
+                                           # NO model call
+
+assert response1.payload == response2.payload  # Always true
+```
+
+## The Alternative: Idempotency Keys Aren't Enough
+
+Some systems attempt to solve this with idempotency keys:
+
+```python
+response = execute(intent, idempotency_key="unique-123")
+```
+
+This helps with duplicate submissions but doesn't solve:
+
+- **Non-deterministic routing** — The key ensures same response for same key, not same agent selection
+- **Crash recovery** — No state persistence between key check and execution
+- **Audit trails** — No record of which agent was selected or why
+- **Replay** — Can't return historical outputs without re-execution
+
+## Determinism vs. Randomness
+
+IntentusNet doesn't eliminate all randomness from your system. It separates concerns:
+
+| Layer | Determinism |
+|-------|-------------|
+| Agent selection | Fully deterministic |
+| Fallback ordering | Fully deterministic |
+| Recording | Fully deterministic |
+| Agent's internal logic | Up to the agent (model calls may vary) |
+| Final output recording | Captured exactly as produced |
+
+**Key insight:** The routing and execution framework is deterministic. What happens inside an agent is the agent's responsibility. But we **record** that output, so replay is still deterministic.
+
+## Measuring Determinism
+
+You can verify IntentusNet's determinism guarantees:
+
+```python
+# Run the same intent 100 times with recording disabled
+results = [runtime.route_intent(envelope) for _ in range(100)]
+
+# All should select the same agent
+agents = [r.metadata['selected_agent'] for r in results]
+assert len(set(agents)) == 1, "Non-deterministic routing detected"
+```
+
+## Summary
+
+| Problem | Traditional Systems | IntentusNet |
+|---------|--------------------|--------------|
+| Agent selection | Non-deterministic | Deterministic ordering |
+| Crash recovery | Undefined state | WAL-backed checkpoints |
+| Debugging | Log grepping | Execution record with trace |
+| Replay | Re-execute (different output) | Return recorded output |
+| Audit | Incomplete | Full execution record |
+
+Deterministic execution isn't a luxury for production AI systems. It's a requirement for reliability, debuggability, and compliance.
+
+## Next Steps
+
+- [Runtime Guarantees](../guarantees/overview) — Detailed specification of what IntentusNet guarantees
+- [Architecture Overview](../architecture/overview) — How the runtime achieves these guarantees

@@ -1,0 +1,304 @@
+---
+sidebar_position: 2
+title: Integration Patterns
+description: Patterns for integrating IntentusNet with MCP
+---
+
+# MCP Integration Patterns
+
+This document covers common patterns for integrating IntentusNet with MCP-based applications.
+
+## Pattern 1: Transparent Proxy
+
+Route all MCP calls through IntentusNet without changing tool implementations:
+
+```python
+from mcp import Server
+from intentusnet import IntentusRuntime, IntentusClient
+from intentusnet.transport import InProcessTransport
+from intentusnet.transport.mcp import MCPAdapter
+
+# Existing tools (unchanged)
+def search_documents(query: str, limit: int = 10) -> list:
+    # Your existing implementation
+    return database.search(query, limit)
+
+def create_document(title: str, content: str) -> dict:
+    # Your existing implementation
+    return database.create(title, content)
+
+# Wrap with IntentusNet
+runtime = IntentusRuntime(enable_recording=True)
+adapter = MCPAdapter(IntentusClient(InProcessTransport(runtime.router)))
+
+# Register tools as IntentusNet agents
+register_tool_as_agent(runtime, "search_documents", search_documents)
+register_tool_as_agent(runtime, "create_document", create_document)
+
+# MCP server proxies through IntentusNet
+server = Server()
+
+@server.tool("search_documents")
+async def mcp_search(query: str, limit: int = 10):
+    return adapter.handle_mcp_request({
+        "tool": "search_documents",
+        "parameters": {"query": query, "limit": limit}
+    })
+
+@server.tool("create_document")
+async def mcp_create(title: str, content: str):
+    return adapter.handle_mcp_request({
+        "tool": "create_document",
+        "parameters": {"title": title, "content": content}
+    })
+```
+
+**Benefits:**
+- Existing tools unchanged
+- All calls recorded
+- Policy enforcement
+- Replay capability
+
+## Pattern 2: Selective Recording
+
+Only route certain tools through IntentusNet:
+
+```python
+# High-value tools go through IntentusNet
+RECORDED_TOOLS = ["execute_code", "modify_file", "send_email"]
+
+@server.tool("execute_code")
+async def execute_code(code: str):
+    if "execute_code" in RECORDED_TOOLS:
+        # Through IntentusNet (recorded, policy-checked)
+        return adapter.handle_mcp_request({
+            "tool": "execute_code",
+            "parameters": {"code": code}
+        })
+    else:
+        # Direct execution (no recording)
+        return run_code(code)
+
+@server.tool("get_time")
+async def get_time():
+    # Low-value, skip IntentusNet
+    return {"time": datetime.now().isoformat()}
+```
+
+## Pattern 3: Policy-Protected Tools
+
+Add policy enforcement to dangerous tools:
+
+```python
+from intentusnet.security import PolicyEngine, PolicyRule, PolicyAction
+
+# Define policies
+policies = PolicyEngine([
+    # Block code execution for non-admins
+    PolicyRule(
+        id="restrict-code-execution",
+        action=PolicyAction.DENY,
+        intents=["execute_code"],
+        roles=["user", "viewer"],
+        tenants=["*"]
+    ),
+    # Allow admins
+    PolicyRule(
+        id="admin-execute",
+        action=PolicyAction.ALLOW,
+        intents=["execute_code"],
+        roles=["admin"],
+        tenants=["*"]
+    ),
+])
+
+runtime = IntentusRuntime(
+    enable_recording=True,
+    policy_engine=policies
+)
+
+# MCP call will be policy-checked
+@server.tool("execute_code")
+async def execute_code(code: str, user_role: str):
+    result = adapter.handle_mcp_request({
+        "tool": "execute_code",
+        "parameters": {"code": code},
+        "context": {"role": user_role}
+    })
+
+    if result.get("error", {}).get("code") == "POLICY_DENIAL":
+        return {"error": "Permission denied"}
+
+    return result
+```
+
+## Pattern 4: Fallback Tools
+
+Configure fallback for tool reliability:
+
+```python
+# Register primary and fallback agents
+runtime.registry.register(AgentDefinition(
+    name="search-primary",
+    nodePriority=10,
+    capabilities=[Capability(intent=IntentRef(name="search_documents"))]
+))
+
+runtime.registry.register(AgentDefinition(
+    name="search-fallback",
+    nodePriority=100,
+    capabilities=[Capability(intent=IntentRef(name="search_documents"))]
+))
+
+# MCP call with fallback
+@server.tool("search_documents")
+async def search(query: str):
+    return adapter.handle_mcp_request({
+        "tool": "search_documents",
+        "parameters": {"query": query},
+        "routing": {"strategy": "FALLBACK"}
+    })
+```
+
+## Pattern 5: Replay for Testing
+
+Use recorded executions for testing:
+
+```python
+# Production: record executions
+@server.tool("analyze_data")
+async def analyze_production(data: dict):
+    result = adapter.handle_mcp_request({
+        "tool": "analyze_data",
+        "parameters": {"data": data}
+    })
+    return result
+
+# Testing: replay recorded executions
+def test_analyze_data():
+    # Load recorded execution
+    store = FileExecutionStore(".intentusnet/records")
+    record = store.load("exec-production-run")
+
+    # Replay
+    engine = ReplayEngine(record)
+    result = engine.replay()
+
+    # Verify against baseline
+    assert result.payload == expected_output
+```
+
+## Pattern 6: Context Propagation
+
+Propagate MCP context through IntentusNet:
+
+```python
+@server.tool("process_with_context")
+async def process_with_context(data: dict, mcp_context: dict):
+    # Map MCP context to IntentusNet
+    intentus_context = {
+        "sourceAgent": mcp_context.get("client_id", "unknown"),
+        "tags": mcp_context.get("tags", []),
+        "priority": map_priority(mcp_context.get("priority")),
+    }
+
+    return adapter.handle_mcp_request({
+        "tool": "process_data",
+        "parameters": {"data": data},
+        "context": intentus_context
+    })
+
+def map_priority(mcp_priority: str) -> str:
+    mapping = {
+        "high": "HIGH",
+        "normal": "NORMAL",
+        "low": "LOW"
+    }
+    return mapping.get(mcp_priority, "NORMAL")
+```
+
+## Pattern 7: Audit Logging
+
+Use IntentusNet recordings for audit:
+
+```python
+# All tool calls automatically audited
+@server.tool("modify_account")
+async def modify_account(account_id: str, changes: dict, user: str):
+    result = adapter.handle_mcp_request({
+        "tool": "modify_account",
+        "parameters": {"account_id": account_id, "changes": changes},
+        "context": {
+            "sourceAgent": user,
+            "tags": ["audit", "account-modification"]
+        }
+    })
+
+    # Execution recorded with:
+    # - Who made the change
+    # - What was changed
+    # - Exact response
+    # - Timestamp
+
+    return result
+
+# Later: audit query
+def audit_account_changes(account_id: str, since: datetime) -> list:
+    store = FileExecutionStore(".intentusnet/records")
+    changes = []
+
+    for exec_id in store.list_all():
+        record = store.load(exec_id)
+        if (record.envelope.get("intent", {}).get("name") == "modify_account" and
+            record.envelope.get("payload", {}).get("account_id") == account_id):
+            changes.append({
+                "timestamp": record.header.createdUtcIso,
+                "user": record.envelope.get("context", {}).get("sourceAgent"),
+                "changes": record.envelope.get("payload", {}).get("changes")
+            })
+
+    return changes
+```
+
+## Anti-Patterns
+
+### Anti-Pattern 1: Bypassing for Performance
+
+```python
+# BAD: Bypassing IntentusNet defeats its purpose
+@server.tool("fast_lookup")
+async def fast_lookup(key: str):
+    # "This is too slow through IntentusNet"
+    return cache.get(key)  # No recording, no policy!
+```
+
+**Solution:** Use sampling or async recording for high-frequency operations.
+
+### Anti-Pattern 2: Ignoring Policy Denials
+
+```python
+# BAD: Ignoring policy and proceeding anyway
+result = adapter.handle_mcp_request(...)
+if result.get("error"):
+    # "Just try anyway"
+    return direct_execute(...)  # Policy bypassed!
+```
+
+**Solution:** Respect policy decisions or adjust policies.
+
+## Summary
+
+| Pattern | Use Case |
+|---------|----------|
+| Transparent Proxy | Add guarantees to existing tools |
+| Selective Recording | Balance overhead and value |
+| Policy-Protected | Secure dangerous tools |
+| Fallback Tools | Improve reliability |
+| Replay Testing | Regression testing |
+| Context Propagation | Maintain context chain |
+| Audit Logging | Compliance and debugging |
+
+## See Also
+
+- [MCP Overview](./overview) — MCP basics
+- [Protocol vs Runtime](./protocol-vs-runtime) — Understanding the distinction

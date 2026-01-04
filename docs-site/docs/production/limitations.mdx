@@ -1,0 +1,360 @@
+---
+sidebar_position: 4
+title: Production Limitations
+description: Known limitations and constraints for production deployments
+---
+
+# Production Limitations
+
+This document lists known limitations, constraints, and considerations for production IntentusNet deployments.
+
+## Performance Constraints
+
+### Recording Overhead
+
+Execution recording adds latency:
+
+| Operation        | Overhead                    |
+| ---------------- | --------------------------- |
+| Envelope hashing | ~0.1ms                      |
+| Event recording  | ~0.05ms per event           |
+| File persistence | ~1-5ms (depends on storage) |
+
+**Typical execution:** 5 events = ~1.5ms overhead
+
+**High-frequency operations:** Consider sampling or async persistence.
+
+```python
+# Sampling: record 1 in 100
+runtime = IntentusRuntime(
+    enable_recording=True,
+    recording_sample_rate=0.01  # 1%
+)
+```
+
+### Storage Growth
+
+Execution records accumulate:
+
+| Execution Rate | Daily Storage (100KB avg) |
+| -------------- | ------------------------- |
+| 1K/day         | 100 MB                    |
+| 100K/day       | 10 GB                     |
+| 10M/day        | 1 TB                      |
+
+**Mitigation:**
+
+- Implement retention policies
+- Archive to cold storage
+- Consider payload trimming for large requests
+
+### Memory Usage
+
+Large payloads increase memory pressure:
+
+```python
+# Limit payload size
+MAX_PAYLOAD_SIZE = 1024 * 1024  # 1MB
+
+def validate_payload(payload):
+    size = len(json.dumps(payload))
+    if size > MAX_PAYLOAD_SIZE:
+        raise PayloadTooLargeError(f"Payload size {size} exceeds limit")
+```
+
+## Scalability Constraints
+
+### Single-Process Routing
+
+The router operates within a single process:
+
+- No distributed routing coordination
+- No cross-process locking
+- Each instance routes independently
+
+**For distributed systems:**
+
+- Run multiple independent instances
+- Use shared storage for records
+- Load balance at the infrastructure level
+
+### No Built-in Clustering
+
+IntentusNet doesn't provide clustering:
+
+```
+NOT SUPPORTED:
+┌─────────┐     ┌─────────┐
+│ Node 1  │ ←─→ │ Node 2  │  Distributed consensus
+└─────────┘     └─────────┘
+```
+
+**Use external solutions:**
+
+- Kubernetes for orchestration
+- etcd/Consul for coordination
+- Shared storage for state
+
+### No Automatic Load Balancing
+
+Routing is deterministic, not load-balanced:
+
+```python
+# All requests to ProcessIntent go to the same agent
+# (the one with highest priority)
+```
+
+**For load balancing:**
+
+- Use infrastructure load balancers
+- Register multiple identical agents with different priorities
+- Use PARALLEL strategy for racing
+
+## Feature Limitations
+
+### Synchronous Only (v1.3.x)
+
+No async/await support in core routing:
+
+```python
+# NOT supported
+async def route():
+    response = await router.route_intent_async(envelope)
+```
+
+**Workaround:**
+
+```python
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
+
+executor = ThreadPoolExecutor(max_workers=10)
+
+async def route_async(envelope):
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(
+        executor,
+        router.route_intent,
+        envelope
+    )
+```
+
+### No Built-in Timeouts
+
+Runtime doesn't enforce agent timeouts:
+
+```python
+# Agent can hang indefinitely
+response = router.route_intent(envelope)
+```
+
+**Workaround:**
+
+```python
+import signal
+
+def timeout_handler(signum, frame):
+    raise TimeoutError("Agent execution timeout")
+
+signal.signal(signal.SIGALRM, timeout_handler)
+signal.alarm(30)  # 30 second timeout
+
+try:
+    response = router.route_intent(envelope)
+finally:
+    signal.alarm(0)  # Cancel alarm
+```
+
+### No Automatic Retries
+
+Failures don't auto-retry:
+
+```python
+# Agent fails → error returned, no retry
+response = router.route_intent(envelope)
+# response.status == "error"
+```
+
+**By design:** Automatic retries can cause duplicate side effects.
+
+**For retry logic:**
+
+```python
+from tenacity import retry, stop_after_attempt, wait_exponential
+
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=1, max=10)
+)
+def route_with_retry(envelope):
+    response = router.route_intent(envelope)
+    if response.status == "error" and response.error.retryable:
+        raise RetryableError(response.error)
+    return response
+```
+
+### File-Based Persistence Only
+
+No built-in database stores:
+
+```python
+# Built-in
+store = FileExecutionStore("/path/to/records")
+
+# NOT built-in (implement yourself)
+store = PostgresExecutionStore(connection_string)
+store = RedisExecutionStore(redis_client)
+```
+
+**Community implementations welcome.**
+
+## Operational Constraints
+
+### No Hot Config Reload
+
+Configuration changes require restart:
+
+```python
+# Change log level → restart required
+# Change policy → restart required (unless programmatic update)
+```
+
+**Workaround:** Implement SIGHUP handler for config reload.
+
+### No Built-in Rate Limiting
+
+Rate limiting is policy-based, not infrastructure-based:
+
+```python
+PolicyRule(
+    rate_limit_per_minute=100,
+    rate_limit_key_template="{tenant}"
+)
+# Evaluated at request time, not queued
+```
+
+**For infrastructure-level rate limiting:**
+
+- Use API gateway
+- Use service mesh (Istio, Linkerd)
+
+### No Circuit Breaker
+
+No automatic circuit breaking for failing agents:
+
+```python
+# Agent fails 1000 times → still tried each time
+```
+
+**Implement externally:**
+
+```python
+from circuitbreaker import circuit
+
+@circuit(failure_threshold=5, recovery_timeout=30)
+def call_agent(envelope):
+    return router.route_intent(envelope)
+```
+
+## Security Constraints
+
+### No Built-in Authentication
+
+IntentusNet doesn't authenticate requests:
+
+```python
+# Anyone can send intents to the router
+response = router.route_intent(envelope)
+```
+
+**Must implement:**
+
+- Authentication middleware
+- Token validation
+- Identity extraction
+
+### No Built-in Encryption at Rest
+
+Execution records stored in plaintext:
+
+```bash
+cat .intentusnet/records/exec-a1b2c3d4.json
+# Full execution visible
+```
+
+**For encryption:**
+
+- Use encrypted filesystem
+- Implement encrypted store
+- Encrypt at application level
+
+### Secrets in Payloads
+
+Payloads are recorded as-is:
+
+```python
+envelope.payload = {"api_key": "secret123"}
+# Recorded in execution record!
+```
+
+**Best practices:**
+
+- Don't include secrets in payloads
+- Use secret references
+- Implement payload filtering
+
+```python
+SENSITIVE_FIELDS = ["password", "api_key", "token"]
+
+def sanitize_for_recording(payload):
+    return {
+        k: "[REDACTED]" if k in SENSITIVE_FIELDS else v
+        for k, v in payload.items()
+    }
+```
+
+## Known Issues
+
+### Parallel Strategy Thread Safety
+
+PARALLEL strategy shares envelope across threads:
+
+```python
+# Multiple agents receive same envelope object
+# Mutations are NOT thread-safe
+```
+
+**Don't mutate envelope in agents during parallel execution.**
+
+### Clock Skew in Distributed Deployments
+
+Timestamps use local system clock:
+
+```
+Node A: 2024-01-15T10:30:00Z
+Node B: 2024-01-15T10:30:05Z  # 5 second skew
+```
+
+**Mitigations:**
+
+- Use NTP
+- Rely on sequence numbers, not timestamps, for ordering
+
+## Summary Table
+
+| Limitation         | Workaround                  | Status           |
+| ------------------ | --------------------------- | ---------------- |
+| Recording overhead | Sampling                    | Documented       |
+| Storage growth     | Retention policies          | Documented       |
+| Single-process     | Multiple instances          | By design        |
+| No clustering      | External orchestration      | Non-goal         |
+| Sync-only          | Thread pool wrapper         | Planned for v1.4 |
+| No timeouts        | Signal-based timeout        | Planned for v1.4 |
+| No auto-retry      | External retry library      | By design        |
+| File storage only  | Custom store implementation | Community        |
+| No auth            | Middleware                  | By design        |
+
+## See Also
+
+- [Limitations (Guarantees)](../guarantees/limitations) — Guarantee limitations
+- [Production Operations](./operations) — Operational guidance

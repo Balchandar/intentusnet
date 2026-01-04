@@ -1,0 +1,328 @@
+---
+sidebar_position: 6
+title: Observability Contract
+description: Structured observability guarantees in IntentusNet
+---
+
+# Observability Contract
+
+IntentusNet provides a CLI-first observability model: structured JSON output, grepable logs, and SSH-friendly inspection. No dashboard required.
+
+## The Guarantee
+
+```
+GUARANTEE: Every routing decision produces a TraceSpan.
+           All output is structured JSON by default.
+           Execution IDs enable cross-reference across systems.
+```
+
+This means:
+- No silent operations
+- Every decision logged with context
+- Machine-readable output for automation
+- Human-readable when needed
+
+## Structured Output
+
+All CLI commands produce JSON by default:
+
+```bash
+$ intentusnet run --intent ProcessIntent --payload '{"data": "test"}'
+{
+  "execution_id": "exec-a1b2c3d4",
+  "status": "success",
+  "selected_agent": "processor-a",
+  "latency_ms": 127,
+  "payload": {
+    "result": "processed"
+  }
+}
+```
+
+### Human-Readable Mode
+
+```bash
+$ intentusnet run --intent ProcessIntent --format text
+Execution: exec-a1b2c3d4
+Status:    success
+Agent:     processor-a
+Latency:   127ms
+Result:    processed
+```
+
+## TraceSpan Contract
+
+Every routing decision emits a `TraceSpan`:
+
+```python
+@dataclass
+class TraceSpan:
+    agent: str       # Selected agent
+    intent: str      # Intent name
+    status: str      # "success" | "error"
+    latencyMs: float # Execution time
+    error: Optional[str] = None
+    timestamp: str   # ISO 8601 timestamp
+```
+
+### Example TraceSpan
+
+```json
+{
+  "agent": "processor-a",
+  "intent": "ProcessIntent",
+  "status": "success",
+  "latencyMs": 127.4,
+  "error": null,
+  "timestamp": "2024-01-15T10:30:00.123Z"
+}
+```
+
+### Fallback Traces
+
+Fallback strategies produce multiple spans:
+
+```json
+[
+  {
+    "agent": "processor-a",
+    "intent": "ProcessIntent",
+    "status": "error",
+    "latencyMs": 50.2,
+    "error": "connection_timeout"
+  },
+  {
+    "agent": "processor-b",
+    "intent": "ProcessIntent",
+    "status": "success",
+    "latencyMs": 89.7,
+    "error": null
+  }
+]
+```
+
+## Execution ID
+
+Every execution has a unique ID for cross-reference:
+
+```
+Format: exec-{random-hex}
+Example: exec-a1b2c3d4e5f6
+```
+
+This ID:
+- Appears in all response metadata
+- Links CLI output to stored records
+- Enables log correlation
+- Is stable across replays
+
+## CLI Observability Commands
+
+### Inspect Execution
+
+```bash
+$ intentusnet inspect exec-a1b2c3d4
+{
+  "execution_id": "exec-a1b2c3d4",
+  "created_at": "2024-01-15T10:30:00Z",
+  "intent": "ProcessIntent",
+  "status": "completed",
+  "agent": "processor-a",
+  "envelope_hash": "sha256:e3b0c44298fc...",
+  "events": [
+    {"seq": 1, "type": "INTENT_RECEIVED"},
+    {"seq": 2, "type": "AGENT_ATTEMPT_START"},
+    {"seq": 3, "type": "AGENT_ATTEMPT_END"},
+    {"seq": 4, "type": "FINAL_RESPONSE"}
+  ],
+  "replayable": true
+}
+```
+
+### List Executions
+
+```bash
+$ intentusnet inspect --list
+exec-a1b2c3d4  2024-01-15T10:30:00Z  ProcessIntent  success
+exec-e5f6g7h8  2024-01-15T10:31:00Z  ProcessIntent  error
+exec-i9j0k1l2  2024-01-15T10:32:00Z  SearchIntent   success
+```
+
+### Filter Executions
+
+```bash
+# By status
+$ intentusnet inspect --list --status error
+
+# By intent
+$ intentusnet inspect --list --intent ProcessIntent
+
+# By time range
+$ intentusnet inspect --list --since 2024-01-15T10:00:00Z
+
+# Combine filters
+$ intentusnet inspect --list --status error --since 2024-01-15
+```
+
+## Grepable Output
+
+All output is designed for grep/jq processing:
+
+```bash
+# Find all errors
+$ intentusnet inspect --list --format json | jq '.[] | select(.status == "error")'
+
+# Extract execution IDs
+$ intentusnet inspect --list | grep error | awk '{print $1}'
+
+# Count by intent
+$ intentusnet inspect --list --format json | jq -r '.[].intent' | sort | uniq -c
+```
+
+## Structured Logging
+
+Configure structured logging for production:
+
+```python
+from intentusnet import IntentusRuntime
+from intentusnet.middleware import LoggingRouterMiddleware
+
+# Create runtime with logging middleware
+runtime = IntentusRuntime(
+    middleware=[LoggingRouterMiddleware(log_level="INFO")]
+)
+```
+
+### Log Output Format
+
+```json
+{
+  "timestamp": "2024-01-15T10:30:00.123Z",
+  "level": "INFO",
+  "event": "route_intent",
+  "execution_id": "exec-a1b2c3d4",
+  "intent": "ProcessIntent",
+  "agent": "processor-a",
+  "latency_ms": 127,
+  "status": "success"
+}
+```
+
+## Metrics Integration
+
+IntentusNet emits metrics via the `MetricsRouterMiddleware`:
+
+```python
+from intentusnet.middleware import MetricsRouterMiddleware
+
+runtime = IntentusRuntime(
+    middleware=[MetricsRouterMiddleware()]
+)
+```
+
+### Emitted Metrics
+
+| Metric | Type | Labels |
+|--------|------|--------|
+| `intentus_request_total` | Counter | intent, agent, status |
+| `intentus_request_latency_ms` | Histogram | intent, agent |
+| `intentus_error_total` | Counter | intent, agent, error_code |
+
+## Error Codes
+
+All errors use typed codes from `ErrorCode` enum:
+
+| Code | Description |
+|------|-------------|
+| `VALIDATION_ERROR` | Invalid input envelope |
+| `AGENT_ERROR` | Agent returned error |
+| `ROUTING_ERROR` | Routing failure |
+| `CAPABILITY_NOT_FOUND` | No agent handles intent |
+| `AGENT_TIMEOUT` | Agent execution timeout |
+| `AGENT_UNAVAILABLE` | Agent not reachable |
+| `PROTOCOL_ERROR` | Protocol violation |
+| `TRANSPORT_ERROR` | Transport failure |
+| `UNAUTHORIZED` | Access denied |
+| `RATE_LIMIT` | Rate limit exceeded |
+| `INTERNAL_AGENT_ERROR` | Unhandled agent exception |
+| `PAYLOAD_TOO_LARGE` | Payload size exceeded |
+| `WORKFLOW_ABORTED` | Workflow terminated |
+| `EMCL_FAILURE` | Encryption/decryption failure |
+
+### Error Output
+
+```json
+{
+  "execution_id": "exec-e5f6g7h8",
+  "status": "error",
+  "error": {
+    "code": "AGENT_TIMEOUT",
+    "message": "Agent processor-a did not respond within 30000ms",
+    "retryable": true,
+    "details": {
+      "agent": "processor-a",
+      "timeout_ms": 30000
+    }
+  }
+}
+```
+
+## Exit Codes
+
+CLI commands return semantic exit codes:
+
+| Exit Code | Meaning |
+|-----------|---------|
+| 0 | Success |
+| 1 | General error |
+| 2 | Validation error |
+| 3 | Routing error |
+| 4 | Agent error |
+| 5 | Policy denial |
+| 10 | Record not found |
+| 11 | Replay not possible |
+
+### CI/CD Integration
+
+```bash
+# Script-friendly execution
+intentusnet run --intent DeployIntent --payload @deploy.json
+if [ $? -eq 0 ]; then
+  echo "Deployment succeeded"
+else
+  echo "Deployment failed with exit code $?"
+  exit 1
+fi
+```
+
+## SSH-Friendly Inspection
+
+All commands work over SSH:
+
+```bash
+# Remote inspection
+$ ssh prod-server "intentusnet inspect exec-a1b2c3d4"
+
+# Remote list with filtering
+$ ssh prod-server "intentusnet inspect --list --status error" | head -10
+
+# Remote replay
+$ ssh prod-server "intentusnet replay exec-a1b2c3d4"
+```
+
+## Observability Summary
+
+| Aspect | Guarantee |
+|--------|-----------|
+| Output format | JSON by default |
+| TraceSpan | Every routing decision |
+| Execution ID | Unique, cross-referenceable |
+| Error codes | Typed enum, documented |
+| Exit codes | Semantic, scriptable |
+| Log format | Structured JSON |
+| Metrics | Standard labels and types |
+
+## Next Steps
+
+- [CLI Reference](../cli/overview) — Full command documentation
+- [Production Observability](../production/observability) — Production setup guide

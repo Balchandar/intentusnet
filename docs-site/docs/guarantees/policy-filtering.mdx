@@ -1,0 +1,370 @@
+---
+sidebar_position: 5
+title: Policy Filtering
+description: Partial allow/deny policy enforcement in IntentusNet
+---
+
+# Policy Filtering
+
+IntentusNet provides policy filtering that allows fine-grained control over intent execution. Critically, policies support **partial filtering**: denying specific targets while allowing the rest to proceed.
+
+## The Guarantee
+
+```
+GUARANTEE: Policy rules are evaluated before execution.
+           Denied targets are filtered; allowed targets proceed.
+           Partial continuation is the default behavior.
+```
+
+This means:
+- Policies don't block entire intents wholesale
+- Only matching targets are filtered
+- Remaining targets execute normally
+- Clear denial reasons provided
+
+## Partial Filtering Example
+
+Consider an intent targeting multiple systems:
+
+```
+Intent: "Power off for maintenance"
+Targets: [HVAC, Lighting, CCTV, Servers]
+```
+
+With a policy rule:
+
+```python
+PolicyRule(
+    id="security-critical",
+    action=PolicyAction.DENY,
+    intents=["PowerOffIntent"],
+    agents=["cctv-controller"],
+    roles=["*"],
+    tenants=["*"]
+)
+```
+
+Result:
+
+```
+CCTV:     DENIED  (matches policy)
+HVAC:     ALLOWED (proceeds to execution)
+Lighting: ALLOWED (proceeds to execution)
+Servers:  ALLOWED (proceeds to execution)
+```
+
+**The intent succeeds for 3 of 4 targets** instead of failing entirely.
+
+## Policy Rule Structure
+
+```python
+@dataclass
+class PolicyRule:
+    id: str                                    # Unique rule identifier
+    action: PolicyAction                       # ALLOW or DENY
+    intents: List[str]                         # Intent patterns to match
+    agents: List[str]                          # Agent patterns to match
+    roles: List[str]                           # Role patterns to match
+    tenants: List[str]                         # Tenant patterns to match
+    payload_regex: Dict[str, str] = {}         # Payload field regex patterns
+    rate_limit_per_minute: Optional[int] = None
+    rate_limit_key_template: Optional[str] = None
+    max_timeout_ms: Optional[int] = None
+```
+
+### Pattern Matching
+
+Patterns support wildcards:
+
+```python
+# Match any intent
+PolicyRule(intents=["*"], ...)
+
+# Match specific intent
+PolicyRule(intents=["PowerOffIntent"], ...)
+
+# Match prefix
+PolicyRule(intents=["Admin*"], ...)  # AdminIntent, AdminDeleteIntent, etc.
+```
+
+## Policy Evaluation Order
+
+Policies are evaluated in definition order:
+
+```python
+policies = [
+    PolicyRule(id="allow-admin", action=ALLOW, roles=["admin"], ...),
+    PolicyRule(id="deny-dangerous", action=DENY, agents=["cctv-*"], ...),
+    PolicyRule(id="allow-default", action=ALLOW, intents=["*"], ...),
+]
+```
+
+Evaluation:
+1. First matching rule wins
+2. If `ALLOW`, target proceeds
+3. If `DENY`, target filtered
+4. No match = default allow (configurable)
+
+## Filtering vs. Blocking
+
+Traditional approach (blocking):
+
+```
+Intent targets 4 systems
+One system denied
+→ ENTIRE INTENT BLOCKED
+→ 0 systems affected
+```
+
+IntentusNet approach (filtering):
+
+```
+Intent targets 4 systems
+One system denied
+→ Denied system filtered out
+→ 3 systems proceed normally
+→ Response includes filter info
+```
+
+## Response with Filtering
+
+When targets are filtered, the response includes details:
+
+```json
+{
+  "status": "success",
+  "payload": {
+    "executed": ["hvac-controller", "lighting-controller", "server-controller"],
+    "results": {...}
+  },
+  "metadata": {
+    "policy": {
+      "filtered": ["cctv-controller"],
+      "filter_reasons": {
+        "cctv-controller": {
+          "rule_id": "security-critical",
+          "action": "DENY",
+          "reason": "security_exclusion"
+        }
+      }
+    }
+  }
+}
+```
+
+## Policy Use Cases
+
+### 1. Security Boundaries
+
+Protect critical systems:
+
+```python
+PolicyRule(
+    id="protect-security-systems",
+    action=PolicyAction.DENY,
+    intents=["PowerOffIntent", "RestartIntent", "ConfigureIntent"],
+    agents=["cctv-*", "alarm-*", "access-control-*"],
+    roles=["*"],  # Applies to all roles
+    tenants=["*"]
+)
+```
+
+### 2. Role-Based Filtering
+
+Limit capabilities by role:
+
+```python
+# Operators can't modify production
+PolicyRule(
+    id="operator-prod-readonly",
+    action=PolicyAction.DENY,
+    intents=["ModifyIntent", "DeleteIntent"],
+    agents=["*"],
+    roles=["operator"],
+    tenants=["production"]
+)
+
+# Admins can do anything
+PolicyRule(
+    id="admin-allow-all",
+    action=PolicyAction.ALLOW,
+    intents=["*"],
+    agents=["*"],
+    roles=["admin"],
+    tenants=["*"]
+)
+```
+
+### 3. Payload-Based Filtering
+
+Filter based on intent payload:
+
+```python
+PolicyRule(
+    id="block-pii-export",
+    action=PolicyAction.DENY,
+    intents=["ExportIntent"],
+    agents=["*"],
+    roles=["*"],
+    tenants=["*"],
+    payload_regex={
+        "fields": ".*email.*|.*ssn.*|.*phone.*"
+    }
+)
+```
+
+### 4. Rate Limiting
+
+Limit execution frequency:
+
+```python
+PolicyRule(
+    id="rate-limit-expensive",
+    action=PolicyAction.ALLOW,
+    intents=["ExpensiveIntent"],
+    agents=["*"],
+    roles=["*"],
+    tenants=["*"],
+    rate_limit_per_minute=10,
+    rate_limit_key_template="{tenant}:{intent}"
+)
+```
+
+## Full Denial
+
+When all targets are denied, the response reflects this:
+
+```json
+{
+  "status": "error",
+  "error": {
+    "code": "POLICY_DENIAL",
+    "message": "All targets denied by policy",
+    "details": {
+      "filtered": ["target-a", "target-b"],
+      "filter_reasons": {...}
+    }
+  }
+}
+```
+
+## Policy Configuration
+
+Define policies in your runtime setup:
+
+```python
+from intentusnet import IntentusRuntime
+from intentusnet.security import PolicyEngine, PolicyRule, PolicyAction
+
+# Define rules
+rules = [
+    PolicyRule(
+        id="protect-cctv",
+        action=PolicyAction.DENY,
+        intents=["PowerOffIntent"],
+        agents=["cctv-controller"],
+        roles=["*"],
+        tenants=["*"]
+    ),
+    PolicyRule(
+        id="default-allow",
+        action=PolicyAction.ALLOW,
+        intents=["*"],
+        agents=["*"],
+        roles=["*"],
+        tenants=["*"]
+    )
+]
+
+# Create policy engine
+policy_engine = PolicyEngine(rules)
+
+# Create runtime with policy
+runtime = IntentusRuntime(policy_engine=policy_engine)
+```
+
+## Policy Inspection
+
+Inspect policy evaluation via CLI:
+
+```bash
+# Dry-run policy evaluation
+$ intentusnet validate --intent PowerOffIntent --targets hvac,cctv,lighting
+{
+  "intent": "PowerOffIntent",
+  "evaluation": {
+    "hvac": {"action": "ALLOW", "rule": "default-allow"},
+    "cctv": {"action": "DENY", "rule": "protect-cctv"},
+    "lighting": {"action": "ALLOW", "rule": "default-allow"}
+  },
+  "would_execute": ["hvac", "lighting"],
+  "would_filter": ["cctv"]
+}
+```
+
+## Failure Modes
+
+| Scenario | Behavior |
+|----------|----------|
+| Single target denied | Others proceed, response includes filter info |
+| All targets denied | Error response with `POLICY_DENIAL` |
+| No matching policy | Default action (configurable, default: allow) |
+| Policy engine error | Fail-closed (deny all) |
+
+## Best Practices
+
+### 1. Order Rules Specific to General
+
+```python
+rules = [
+    # Specific overrides first
+    PolicyRule(id="admin-override", action=ALLOW, roles=["admin"], ...),
+    # Then specific denials
+    PolicyRule(id="deny-cctv", action=DENY, agents=["cctv-*"], ...),
+    # Finally, default
+    PolicyRule(id="default", action=ALLOW, intents=["*"], ...),
+]
+```
+
+### 2. Always Include a Default
+
+```python
+# Without default, unmatched intents have undefined behavior
+rules = [
+    ...specific rules...,
+    PolicyRule(id="default-deny", action=DENY, intents=["*"], ...)
+]
+```
+
+### 3. Log Policy Decisions
+
+```python
+# Enable policy decision logging
+policy_engine = PolicyEngine(rules, log_decisions=True)
+# Produces structured logs for each evaluation
+```
+
+### 4. Test Policy Changes
+
+```python
+def test_cctv_protection():
+    response = runtime.route_intent(power_off_intent)
+    assert "cctv-controller" in response.metadata["policy"]["filtered"]
+    assert "hvac-controller" in response.payload["executed"]
+```
+
+## Summary
+
+| Aspect | Guarantee |
+|--------|-----------|
+| Evaluation timing | Before execution |
+| Partial filtering | Supported (default) |
+| Denial transparency | Clear reasons in response |
+| Pattern matching | Wildcards supported |
+| Default behavior | Configurable (default: allow) |
+| Error mode | Fail-closed on engine error |
+
+## Next Steps
+
+- [Policy Design (Advanced)](../advanced/policy-design) — Policy architecture patterns
+- [Dangerous Target Filtering Demo](../demos/dangerous-target-filtering) — See policy filtering in action

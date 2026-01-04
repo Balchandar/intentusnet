@@ -1,0 +1,117 @@
+---
+sidebar_position: 1
+title: What is IntentusNet
+description: Understanding IntentusNet - a deterministic execution runtime for multi-agent AI systems
+---
+
+# What is IntentusNet
+
+IntentusNet is an open-source, language-agnostic **execution runtime for multi-agent systems** designed to make routing, fallback, and failure behavior **deterministic, replayable, explainable, and production-operable**.
+
+:::info The Core Premise
+The model may change. The execution must not.
+:::
+
+## What IntentusNet Does
+
+IntentusNet sits between your agent orchestration layer and the actual agent execution. It provides:
+
+1. **Deterministic Routing** — Given the same intent and set of agents, the router always selects agents in the same order
+2. **Execution Recording** — Every execution is captured as an immutable record with stable hashes
+3. **Replay Without Re-execution** — Recorded executions can be replayed to return the exact same output without calling models again
+4. **Policy Filtering** — Fine-grained control over which targets are allowed, with partial continuation support
+5. **Structured Observability** — Every routing decision produces trace spans and structured logs
+
+## What IntentusNet Is NOT
+
+It's critical to understand what IntentusNet does **not** do:
+
+| IntentusNet Does NOT          | Use These Instead                      |
+| ----------------------------- | -------------------------------------- |
+| Build agents                  | LangChain, AutoGen, CrewAI             |
+| Define prompts                | Your agent framework                   |
+| Call LLMs                     | OpenAI SDK, Anthropic SDK, etc.        |
+| Orchestrate complex workflows | Temporal, Prefect, or agent frameworks |
+| Provide authentication        | Your infrastructure layer              |
+| Load balance                  | Kubernetes, your cloud provider        |
+
+IntentusNet is a **runtime layer** that ensures deterministic execution semantics beneath whatever agent framework you choose.
+
+## The Runtime Analogy
+
+Think of IntentusNet as **systemd for AI agents**:
+
+- systemd doesn't write your service code
+- systemd ensures reliable startup, restart, and supervision semantics
+- systemd provides structured logging and dependency management
+
+Similarly:
+
+- IntentusNet doesn't write your agents
+- IntentusNet ensures deterministic routing, crash recovery, and replay semantics
+- IntentusNet provides execution recording and structured observability
+
+## When to Use IntentusNet
+
+IntentusNet is designed for production multi-agent systems where you need:
+
+- **Reproducible debugging** — "Why did the system choose that agent?" must have a deterministic answer
+- **Audit trails** — Regulatory or compliance requirements for AI decision logging
+- **Failure recovery** — Crash mid-execution shouldn't leave the system in undefined state
+- **Behavioral stability** — Model upgrades shouldn't change routing decisions silently
+
+## When NOT to Use IntentusNet
+
+IntentusNet may be overkill if:
+
+- You have a single agent with no routing complexity
+- You don't need execution replay or audit trails
+- You're prototyping and don't care about production semantics yet
+- Your system is stateless and doesn't need crash recovery
+
+## Version and Status
+
+| Property        | Value                                |
+| --------------- | ------------------------------------ |
+| Current Version | 1.3.0                                |
+| Python Support  | 3.9+                                 |
+| Status          | Production-ready for core guarantees |
+| License         | MIT                                  |
+
+## Core Dependencies
+
+IntentusNet has minimal core dependencies:
+
+```
+cryptography >= 42.0.0
+websockets >= 12.0
+pyzmq >= 25.1.0
+fastapi >= 0.110.0
+uvicorn >= 0.29.0
+python-dateutil >= 2.9.0
+```
+
+## Quick Example
+
+```python
+from intentusnet import IntentusRuntime, BaseAgent, IntentEnvelope, AgentResponse
+
+# Create runtime with recording enabled
+runtime = IntentusRuntime(enable_recording=True)
+
+# Register agents (your agent implementation)
+# ... agent registration code ...
+
+# Execute intent - deterministically routed
+response = runtime.router.route_intent(envelope)
+
+# Response includes execution_id for replay
+print(f"Execution ID: {response.metadata['execution_id']}")
+print(f"Replayable: {response.metadata.get('replayable', False)}")
+```
+
+## Next Steps
+
+- [Why Deterministic Execution Matters](./why-deterministic-execution) — Understand the problem IntentusNet solves
+- [MCP Compatibility](./mcp-compatibility) — How IntentusNet relates to the Model Context Protocol
+- [Getting Started](../getting-started/install) — Install and run your first intent
