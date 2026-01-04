@@ -12,14 +12,14 @@ IntentusNet provides explicit, documented guarantees for production multi-agent 
 
 Every production runtime needs a clear contract. IntentusNet's contract is:
 
-| Guarantee                   | Status          | Description                               |
-| --------------------------- | --------------- | ----------------------------------------- |
-| Deterministic Routing       | **Provided**    | Same input → same agent selection order   |
-| Execution Recording         | **Provided**    | Every execution captured with stable hash |
-| Replay Without Re-execution | **Provided**    | Return recorded output, no model calls    |
-| Policy Filtering            | **Provided**    | Partial allow/deny with continuation      |
-| Structured Errors           | **Provided**    | Typed error codes, no silent failures     |
-| Crash Recovery              | **Design Goal** | WAL-backed state persistence              |
+| Guarantee                   | Status                | Description                                            |
+| --------------------------- | --------------------- | ------------------------------------------------------ |
+| Deterministic Routing       | **Provided**          | Same input → same agent selection order                |
+| Execution Recording         | **Provided**          | Every execution captured with stable hash              |
+| Replay Without Re-execution | **Provided**          | Return recorded output, no model calls                 |
+| Policy Filtering            | **Provided**          | Partial allow/deny with continuation                   |
+| Structured Errors           | **Provided**          | Typed error codes, no silent failures                  |
+| Crash Recovery              | **Provided (v1.3.0)** | WAL-backed execution state with deterministic recovery |
 
 :::note Design Goals vs. Implemented Guarantees
 Features marked as "Design Goal" are architecturally planned but may have implementation limitations in the current version. See individual guarantee pages for details.
