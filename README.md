@@ -4,10 +4,10 @@
 
 **Deterministic • Transport-Agnostic • EMCL-Ready • MCP-Compatible**
 
-IntentusNet is an open-source, language-agnostic **execution runtime for multi-agent systems**.  
+IntentusNet is an open-source, language-agnostic **execution runtime for multi-agent and tool-driven systems**.  
 It makes routing, fallback, and failure handling **deterministic, replayable, explainable, and production-operable**.
 
-IntentusNet focuses strictly on **execution semantics**, not planning or intelligence — ensuring that **execution behavior remains predictable even when models are not**.
+IntentusNet focuses strictly on **execution semantics** (not planning, reasoning, or prompt intelligence) — ensuring that **execution behavior remains predictable even when models are not**.
 
 ---
 
@@ -15,6 +15,55 @@ IntentusNet focuses strictly on **execution semantics**, not planning or intelli
 [![Python](https://img.shields.io/badge/python-3.9%2B-blue)](#)
 [![MCP](https://img.shields.io/badge/MCP-compatible-brightgreen)](#)
 [![Architecture](https://img.shields.io/badge/architecture-execution--runtime-orange)](#)
+
+---
+
+## Documentation
+
+📚 **Docs site:** https://intentusnet.com
+
+Start here:
+
+- **Introduction** — what IntentusNet is (and isn’t)
+- **Guarantees** — the execution contract
+- **Architecture** — routing, execution, recording, replay
+- **CLI** — inspect, trace, replay, diff
+
+---
+
+## Quickstart
+
+Install the Python runtime:
+
+```bash
+pip install intentusnet
+```
+
+Run a deterministic intent execution:
+
+```python
+from intentusnet.runtime import IntentRuntime
+from intentusnet.intent import Intent
+
+runtime = IntentRuntime.load_default()
+
+result = runtime.execute(
+    Intent(
+        name="summarize_text",
+        payload={"text": "Hello world"},
+    )
+)
+
+print(result.output)
+```
+
+Inspect and replay the execution (no model re-run):
+
+```bash
+intentusnet executions list
+intentusnet executions show <execution-id>
+intentusnet executions replay <execution-id>
+```
 
 ---
 
@@ -29,11 +78,28 @@ In real production systems, failures are often:
 - hidden behind retries and fallback logic
 - impossible to replay or audit
 
-IntentusNet addresses this by enforcing **deterministic execution semantics around LLMs**, so failures become:
+IntentusNet enforces **deterministic execution semantics around LLMs and tools**, so failures become:
 
 - **Replayable**
 - **Attributable**
 - **Explainable**
+
+---
+
+## Guarantees at a Glance
+
+IntentusNet provides an explicit execution contract:
+
+| Guarantee                   | Status                | Description                               |
+| --------------------------- | --------------------- | ----------------------------------------- |
+| Deterministic Routing       | **Provided**          | Same input → same agent selection order   |
+| Execution Recording         | **Provided**          | Every execution captured with stable hash |
+| Replay Without Re-execution | **Provided**          | Recorded output returned, no model calls  |
+| Policy Filtering            | **Provided**          | Partial allow/deny with continuation      |
+| Structured Errors           | **Provided**          | Typed error codes, no silent failures     |
+| Crash Recovery              | **Provided (v1.3.0)** | WAL-backed execution state & recovery     |
+
+➡️ Full guarantee details: https://intentusnet.com/docs/guarantees
 
 ---
 
@@ -53,14 +119,14 @@ This enables:
 - auditability and compliance
 - safe model iteration without rewriting history
 
-> **The model may change.  
-> The execution must not.**
+> **The model may change.**  
+> **The execution must not.**
 
-This design is formalized in  
+This design is formalized in:  
 **RFC-0001 — Debuggable Execution Semantics for LLM Systems**  
 → `rfcs/RFC-0001-debuggable-llm-execution.md`
 
-**Non-goals:** IntentusNet does not plan tasks, reason about goals, or optimize prompts.
+**Non-goals:** IntentusNet does not plan tasks, reason about goals, evaluate outputs, or optimize prompts.
 
 ---
 
@@ -68,7 +134,7 @@ This design is formalized in
 
 - Deterministic intent routing
 - Explicit fallback chains
-- Execution recording (WAL-backed)
+- Execution recording (**WAL-backed**)
 - Deterministic replay & verification
 - Crash-safe recovery
 - Typed failures & execution contracts
@@ -112,7 +178,13 @@ IntentusNet is **MCP-compatible by design**:
 - MCP-style responses can be emitted
 - Optional EMCL-secured MCP envelopes
 
-IntentusNet provides deterministic execution semantics **around MCP tools**.
+IntentusNet provides deterministic execution semantics **around MCP tools**, not a replacement for MCP.
+
+📘 **MCP Documentation:**  
+https://intentusnet.com/docs/mcp
+
+📦 **MCP Adapter Source:**  
+https://github.com/Balchandar/intentusnet/tree/main/src/intentusnet/mcp
 
 ---
 
@@ -124,8 +196,7 @@ Agents can be implemented in any language that supports:
 - ZeroMQ
 - WebSocket
 
-Including:
-Python, C#, Go, TypeScript, Rust
+Including: Python, C#, Go, TypeScript, Rust.
 
 ---
 
@@ -144,12 +215,18 @@ Python, C#, Go, TypeScript, Rust
 - CLI tooling
 - Example agents & demos
 
-> **Note:**  
-> Higher-level ergonomic SDKs (decorators, auto-registration) and C#/TypeScript SDKs are planned next.
+> **Note:** Higher-level ergonomic SDKs (decorators, auto-registration) and C#/TypeScript SDKs are planned next.
 
 ---
 
 ## Demos
+
+All demos are runnable, deterministic, and replayable.
+
+📂 **Demo Index:**  
+https://intentusnet.com/docs/demos
+
+---
 
 ### `deterministic_routing_demo`
 
@@ -159,21 +236,35 @@ Compares three approaches using identical capabilities:
 - **with** — deterministic routing via IntentusNet
 - **mcp** — routing backed by a mock MCP tool server
 
+📘 **Demo Documentation:**  
+https://intentusnet.com/docs/demos/deterministic-routing
+
+📦 **Source Code:**  
+https://github.com/Balchandar/intentusnet/tree/main/examples/deterministic_routing_demo
+
 ```bash
 python -m examples.deterministic_routing_demo.demo --mode without
 python -m examples.deterministic_routing_demo.demo --mode with
 python -m examples.deterministic_routing_demo.demo --mode mcp
 ```
 
+---
+
 ### `execution_replay_example`
 
-Shows how model upgrades change live behavior while past executions remain replayable.
+Demonstrates how model upgrades change live behavior while **past executions remain replayable** without re-running models.
+
+📘 **Demo Documentation:**  
+https://intentusnet.com/docs/demos/execution-replay
+
+📦 **Source Code:**  
+https://github.com/Balchandar/intentusnet/tree/main/examples/execution_replay_example
 
 ---
 
 ## Operational Scope (Important)
 
-IntentusNet is a **deterministic execution runtime**, not an autonomous agent system.
+IntentusNet is a **deterministic execution runtime**, not an autonomous agent framework.
 
 ### Guarantees
 
@@ -222,7 +313,7 @@ Non-deterministic model behavior is detected, recorded, and surfaced — never h
 
 ## License
 
-MIT License — open-source
+MIT License
 
 ---
 
