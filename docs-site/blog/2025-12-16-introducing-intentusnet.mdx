@@ -1,0 +1,89 @@
+---
+slug: introducing-intentusnet
+title: Introducing IntentusNet - Deterministic Execution for Multi-Agent AI
+authors: [balachandar]
+tags: [release, announcement]
+---
+
+Today we're releasing IntentusNet, a deterministic execution runtime for multi-agent AI systems. IntentusNet makes routing, fallback, and failure behavior **replayable, explainable, and production-operable**.
+
+<!-- truncate -->
+
+## The Problem
+
+Multi-agent AI systems are fundamentally non-deterministic. When you deploy agents in production, you face:
+
+- **Non-deterministic routing**: Agent selection varies between runs
+- **Silent failures**: Errors disappear without trace
+- **Unreplayable executions**: Cannot reproduce issues
+- **Debugging nightmares**: "Why did the system do that?"
+
+These aren't edge cases—they're daily realities for teams running AI agents in production.
+
+## Our Approach
+
+IntentusNet is a **runtime layer** that sits beneath agent frameworks to make execution deterministic and debuggable. It's not an agent framework—it doesn't define prompts, call LLMs, or orchestrate workflows. Instead, it ensures:
+
+1. **Deterministic Routing**: Same input → same agent selection, always
+2. **Execution Recording**: Every execution captured with stable hashes
+3. **Replay Without Re-execution**: Return recorded outputs, no model calls
+4. **Policy Filtering**: Fine-grained control with partial continuation
+
+## Quick Example
+
+```python
+from intentusnet import IntentusRuntime
+
+# Create runtime with recording enabled
+runtime = IntentusRuntime(enable_recording=True)
+
+# Register your agents
+# ... agent registration ...
+
+# Execute intent - deterministically routed
+response = runtime.router.route_intent(envelope)
+
+# Later: replay returns exact same output
+replay_result = runtime.replay(execution_id)
+```
+
+## What's in v1.3.0
+
+- **Core Runtime**: Deterministic routing, execution recording, replay engine
+- **Policy Engine**: Allow/deny rules with partial filtering
+- **Multiple Transports**: In-process, HTTP, WebSocket, ZeroMQ
+- **MCP Adapter**: Bridge to Model Context Protocol
+- **Comprehensive CLI**: Inspect, replay, validate, estimate
+
+## Philosophy
+
+IntentusNet is built on a core belief:
+
+> The model may change. The execution must not.
+
+AI systems are inherently unpredictable. Models update, confidence scores shift, and outputs vary. But the **execution infrastructure** should be rock-solid—deterministic, auditable, and recoverable.
+
+Think of it like systemd for AI agents: it doesn't write your service, but it ensures reliable execution semantics.
+
+## Get Started
+
+```bash
+pip install intentusnet
+```
+
+Check out the [documentation](/docs/getting-started/install) to get started.
+
+## What's Next
+
+We're working on:
+
+- WAL-backed persistence for stronger durability guarantees
+- Async routing support
+- Additional execution stores (PostgreSQL, Redis)
+- Enhanced cost estimation
+
+Follow us on [GitHub](https://github.com/Balchandar/intentusnet) to stay updated.
+
+---
+
+IntentusNet is open source under the MIT license. We welcome contributions, feedback, and production war stories.

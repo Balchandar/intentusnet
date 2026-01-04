@@ -1,0 +1,292 @@
+---
+sidebar_position: 3
+title: Crash-Safe Execution
+description: Execution recording and crash recovery guarantees in IntentusNet
+---
+
+# Crash-Safe Execution
+
+IntentusNet provides crash-safe execution through comprehensive recording of every execution step. This document explains the recording model, persistence guarantees, and recovery behavior.
+
+## The Guarantee
+
+```
+GUARANTEE: Every intent execution is recorded as an immutable
+           ExecutionRecord before final response is returned.
+```
+
+This means:
+- Execution state captured before side effects complete
+- Crash recovery can identify last completed step
+- No execution is "lost" to system failures
+
+## Execution Recording Model
+
+Every execution produces an `ExecutionRecord`:
+
+```python
+@dataclass
+class ExecutionRecord:
+    header: ExecutionHeader    # Metadata: id, timestamp, hash
+    envelope: Dict[str, Any]   # Original intent envelope
+    routerDecision: Dict       # Which agent was selected
+    events: List[ExecutionEvent]  # Step-by-step execution trace
+    finalResponse: Dict        # Final agent response
+```
+
+### ExecutionHeader
+
+```python
+@dataclass
+class ExecutionHeader:
+    executionId: str           # Unique identifier
+    createdUtcIso: str         # Creation timestamp
+    envelopeHash: str          # SHA-256 of envelope for integrity
+    replayable: bool           # Whether replay is safe
+    replayableReason: str      # If not replayable, why
+```
+
+### Envelope Hash
+
+The envelope hash provides integrity verification:
+
+```python
+import hashlib
+import json
+
+def compute_envelope_hash(envelope: dict) -> str:
+    # Canonical JSON serialization
+    canonical = json.dumps(envelope, sort_keys=True, separators=(',', ':'))
+    return f"sha256:{hashlib.sha256(canonical.encode()).hexdigest()}"
+```
+
+This hash:
+- Computed at execution start
+- Stored in record header
+- Verified during replay (optional)
+- Detects envelope tampering
+
+## Event Recording
+
+Execution progresses through discrete events:
+
+```python
+@dataclass
+class ExecutionEvent:
+    seq: int           # Deterministic sequence number
+    type: str          # Event type from defined set
+    payload: Dict      # Event-specific data
+```
+
+### Event Types
+
+| Event Type | When Recorded | Payload |
+|------------|---------------|---------|
+| `INTENT_RECEIVED` | Intent arrives at router | `{intent, timestamp}` |
+| `AGENT_ATTEMPT_START` | Before agent execution | `{agent, attempt_num}` |
+| `AGENT_ATTEMPT_END` | After agent execution | `{agent, status, latency_ms}` |
+| `FALLBACK_TRIGGERED` | On fallback to next agent | `{from_agent, to_agent, reason}` |
+| `ROUTER_DECISION` | Final routing decision made | `{agent, intent, reason}` |
+| `FINAL_RESPONSE` | Response ready to return | `{status, has_error}` |
+
+### Example Event Sequence
+
+```json
+{
+  "events": [
+    {"seq": 1, "type": "INTENT_RECEIVED", "payload": {"intent": "ProcessIntent"}},
+    {"seq": 2, "type": "AGENT_ATTEMPT_START", "payload": {"agent": "processor-a"}},
+    {"seq": 3, "type": "AGENT_ATTEMPT_END", "payload": {"agent": "processor-a", "status": "error"}},
+    {"seq": 4, "type": "FALLBACK_TRIGGERED", "payload": {"from": "processor-a", "to": "processor-b"}},
+    {"seq": 5, "type": "AGENT_ATTEMPT_START", "payload": {"agent": "processor-b"}},
+    {"seq": 6, "type": "AGENT_ATTEMPT_END", "payload": {"agent": "processor-b", "status": "success"}},
+    {"seq": 7, "type": "ROUTER_DECISION", "payload": {"agent": "processor-b"}},
+    {"seq": 8, "type": "FINAL_RESPONSE", "payload": {"status": "success"}}
+  ]
+}
+```
+
+## Persistence Layer
+
+### Current Implementation: File-Based
+
+IntentusNet currently persists records to files:
+
+```python
+from intentusnet import FileExecutionStore
+
+store = FileExecutionStore(base_path=".intentusnet/records")
+
+# Records stored as:
+# .intentusnet/records/{execution_id}.json
+```
+
+File structure:
+
+```
+.intentusnet/
+└── records/
+    ├── exec-a1b2c3d4.json
+    ├── exec-e5f6g7h8.json
+    └── ...
+```
+
+### Persistence Guarantees
+
+| Aspect | Guarantee |
+|--------|-----------|
+| Record creation | Before `route_intent` returns |
+| Record completeness | All events up to failure point |
+| File atomicity | Write to temp, rename (POSIX atomic) |
+| Concurrent access | Not guaranteed (single-writer assumed) |
+
+:::note Design Goal: WAL-Backed Persistence
+A Write-Ahead Log (WAL) based persistence layer is planned for future versions to provide stronger durability guarantees during execution, not just after completion.
+:::
+
+## Crash Recovery Scenarios
+
+### Scenario 1: Crash Before Execution
+
+```
+Timeline:
+  t0: Intent received
+  t1: CRASH
+```
+
+Recovery behavior:
+- No record exists
+- Client receives no response
+- Safe to retry (intent never executed)
+
+### Scenario 2: Crash During Execution
+
+```
+Timeline:
+  t0: Intent received
+  t1: INTENT_RECEIVED event recorded
+  t2: AGENT_ATTEMPT_START recorded
+  t3: Agent begins work
+  t4: CRASH (before AGENT_ATTEMPT_END)
+```
+
+Recovery behavior:
+- Partial record exists with events up to t2
+- `replayable: false` (incomplete execution)
+- `replayableReason: "execution_incomplete"`
+- Requires investigation before retry
+
+### Scenario 3: Crash After Execution
+
+```
+Timeline:
+  t0: Intent received
+  t1-t6: Normal execution events
+  t7: FINAL_RESPONSE recorded
+  t8: Response being returned
+  t9: CRASH
+```
+
+Recovery behavior:
+- Complete record exists
+- `replayable: true`
+- Replay returns the recorded response
+- No re-execution needed
+
+## Inspecting Recovery State
+
+After a crash, inspect execution state:
+
+```bash
+# List all executions
+$ intentusnet inspect --list
+exec-a1b2c3d4  2024-01-15T10:30:00Z  ProcessIntent  completed  replayable
+exec-e5f6g7h8  2024-01-15T10:31:00Z  ProcessIntent  incomplete  not-replayable
+
+# Examine incomplete execution
+$ intentusnet inspect exec-e5f6g7h8
+{
+  "execution_id": "exec-e5f6g7h8",
+  "status": "incomplete",
+  "last_event": {
+    "seq": 3,
+    "type": "AGENT_ATTEMPT_START",
+    "agent": "processor-a"
+  },
+  "replayable": false,
+  "replayable_reason": "execution_incomplete"
+}
+```
+
+## Recovery Decisions
+
+IntentusNet doesn't automatically retry incomplete executions. This is deliberate:
+
+| Approach | Risk |
+|----------|------|
+| Automatic retry | May duplicate side effects |
+| Automatic skip | May lose required work |
+| Manual decision | Operator assesses situation |
+
+**Recommended recovery workflow:**
+
+1. Identify incomplete executions via `inspect`
+2. Assess each case:
+   - What was the last recorded event?
+   - Did the agent have side effects?
+   - Is retry safe?
+3. Decide: retry, skip, or manual intervention
+
+## Idempotency Considerations
+
+For safest crash recovery, design agents to be idempotent:
+
+```python
+class IdempotentAgent(BaseAgent):
+    def handle_intent(self, env: IntentEnvelope) -> AgentResponse:
+        request_id = env.metadata.requestId
+
+        # Check if already processed
+        if self.already_processed(request_id):
+            return self.get_cached_response(request_id)
+
+        # Process and cache
+        result = self.do_work(env.payload)
+        self.cache_response(request_id, result)
+
+        return AgentResponse.success(result, agent=self.definition.name)
+```
+
+## Flush Boundaries
+
+Events are flushed to the recorder at these boundaries:
+
+```
+INTENT_RECEIVED      → Flush
+AGENT_ATTEMPT_START  → Flush
+AGENT_ATTEMPT_END    → Flush
+FALLBACK_TRIGGERED   → Flush
+ROUTER_DECISION      → Flush
+FINAL_RESPONSE       → Flush + Persist to store
+```
+
+This provides:
+- Fine-grained recovery points
+- Clear "last known state" after crash
+- Minimal lost work on failure
+
+## Summary
+
+| Aspect | Guarantee |
+|--------|-----------|
+| Recording | Every execution produces a record |
+| Event capture | All events up to failure point |
+| Envelope hash | SHA-256 integrity verification |
+| Persistence | File-based, atomic write |
+| Crash recovery | Manual decision based on recorded state |
+| Automatic retry | NOT provided (by design) |
+
+## Next Steps
+
+- [Replayability](./replayability) — How to safely replay recorded executions
+- [Crash Safety Internals](../advanced/crash-safety-internals) — Deep dive on the recording system

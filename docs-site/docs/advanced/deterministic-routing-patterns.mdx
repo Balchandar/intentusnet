@@ -1,0 +1,372 @@
+---
+sidebar_position: 5
+title: Deterministic Routing Patterns
+description: Advanced patterns for configuring deterministic routing
+---
+
+# Deterministic Routing Patterns
+
+This document covers advanced patterns for configuring and leveraging IntentusNet's deterministic routing capabilities.
+
+## Routing Fundamentals
+
+### The Ordering Algorithm
+
+```python
+def compute_agent_order(agents: List[AgentDefinition]) -> List[AgentDefinition]:
+    """Deterministic agent ordering."""
+    return sorted(
+        agents,
+        key=lambda a: (
+            0 if a.nodeId is None else 1,  # Local first
+            a.nodePriority,                 # Lower priority first
+            a.name                          # Alphabetical tiebreaker
+        )
+    )
+```
+
+### Order Stability
+
+The ordering is stable across:
+- Process restarts
+- Time changes
+- Concurrent requests
+- Different machines (given same configuration)
+
+## Pattern 1: Primary-Secondary Setup
+
+Configure explicit primary and fallback agents:
+
+```python
+# Primary agent (high priority)
+primary = AgentDefinition(
+    name="processor-primary",
+    nodeId=None,        # Local
+    nodePriority=10,    # Low number = high priority
+    capabilities=[Capability(intent=IntentRef(name="ProcessIntent"))]
+)
+
+# Secondary agent (lower priority)
+secondary = AgentDefinition(
+    name="processor-secondary",
+    nodeId=None,
+    nodePriority=100,   # Higher number = lower priority
+    capabilities=[Capability(intent=IntentRef(name="ProcessIntent"))]
+)
+
+# Ordering: [processor-primary, processor-secondary]
+```
+
+### With Fallback Strategy
+
+```python
+response = router.route_intent(
+    envelope,
+    routing=RoutingOptions(strategy=RoutingStrategy.FALLBACK)
+)
+# Tries primary first, falls back to secondary on failure
+```
+
+## Pattern 2: Regional Routing
+
+Route to local agents first, then remote:
+
+```python
+# Local agent (preferred)
+local = AgentDefinition(
+    name="processor-us-west",
+    nodeId=None,        # Local = preferred
+    nodePriority=100,
+    capabilities=[...]
+)
+
+# Remote agents
+remote_east = AgentDefinition(
+    name="processor-us-east",
+    nodeId="node-us-east",  # Remote
+    nodePriority=50,         # Lower priority number, but remote
+    capabilities=[...]
+)
+
+remote_eu = AgentDefinition(
+    name="processor-eu",
+    nodeId="node-eu",
+    nodePriority=60,
+    capabilities=[...]
+)
+
+# Ordering: [local, remote_east, remote_eu]
+# Local wins despite higher priority number because isLocal=True
+```
+
+## Pattern 3: Versioned Agents
+
+Route to specific agent versions:
+
+```python
+# Version 2 (preferred)
+v2 = AgentDefinition(
+    name="processor-v2",
+    version="2.0",
+    nodePriority=10,
+    capabilities=[
+        Capability(intent=IntentRef(name="ProcessIntent", version="2.0"))
+    ]
+)
+
+# Version 1 (fallback)
+v1 = AgentDefinition(
+    name="processor-v1",
+    version="1.0",
+    nodePriority=100,
+    capabilities=[
+        Capability(intent=IntentRef(name="ProcessIntent", version="1.0"))
+    ]
+)
+
+# Request v2 specifically
+envelope = IntentEnvelope(
+    intent=IntentRef(name="ProcessIntent", version="2.0"),
+    ...
+)
+# Only v2 matches
+```
+
+## Pattern 4: Capability-Based Selection
+
+Different agents for different capabilities:
+
+```python
+# Fast but limited
+fast_agent = AgentDefinition(
+    name="processor-fast",
+    nodePriority=10,
+    capabilities=[
+        Capability(
+            intent=IntentRef(name="ProcessIntent"),
+            inputSchema={"max_size": 1024}  # Limited capacity
+        )
+    ]
+)
+
+# Slow but capable
+capable_agent = AgentDefinition(
+    name="processor-capable",
+    nodePriority=100,
+    capabilities=[
+        Capability(
+            intent=IntentRef(name="ProcessIntent"),
+            inputSchema={"max_size": 1048576}  # Large capacity
+        )
+    ]
+)
+
+# Selection based on payload characteristics
+# (Requires custom capability matcher)
+```
+
+## Pattern 5: Explicit Targeting
+
+Bypass ordering with explicit targeting:
+
+```python
+# Always route to specific agent
+response = router.route_intent(
+    envelope,
+    routing=RoutingOptions(
+        strategy=RoutingStrategy.DIRECT,
+        targetAgent="processor-specific"
+    )
+)
+```
+
+### Target with Fallback
+
+```python
+response = router.route_intent(
+    envelope,
+    routing=RoutingOptions(
+        strategy=RoutingStrategy.FALLBACK,
+        targetAgent="processor-primary",        # Try first
+        fallbackAgents=["processor-secondary"]  # Then these
+    )
+)
+```
+
+## Pattern 6: Broadcast Aggregation
+
+Execute all agents and aggregate results:
+
+```python
+response = router.route_intent(
+    envelope,
+    routing=RoutingOptions(strategy=RoutingStrategy.BROADCAST)
+)
+# All matching agents executed in order
+# Returns last successful response
+
+# For custom aggregation, implement aggregating agent:
+class AggregatingAgent(BaseAgent):
+    def handle_intent(self, env: IntentEnvelope) -> AgentResponse:
+        results = []
+        for agent_name in self.target_agents:
+            result = self.emit_intent(
+                "ProcessIntent",
+                env.payload,
+                target_agent=agent_name
+            )
+            results.append(result.payload)
+
+        return AgentResponse.success(
+            {"aggregated": self.aggregate(results)},
+            agent=self.name
+        )
+```
+
+## Pattern 7: Parallel Racing
+
+First successful response wins:
+
+```python
+response = router.route_intent(
+    envelope,
+    routing=RoutingOptions(strategy=RoutingStrategy.PARALLEL)
+)
+# All agents started concurrently
+# First success returned
+```
+
+:::warning Parallel Determinism
+While agent selection is deterministic, completion order may vary due to execution timing. The first successful completion wins.
+:::
+
+## Pattern 8: Priority Tiers
+
+Organize agents into priority tiers:
+
+```python
+TIER_CRITICAL = 10
+TIER_PRIMARY = 50
+TIER_SECONDARY = 100
+TIER_FALLBACK = 200
+
+agents = [
+    AgentDefinition(name="critical-handler", nodePriority=TIER_CRITICAL, ...),
+    AgentDefinition(name="primary-a", nodePriority=TIER_PRIMARY, ...),
+    AgentDefinition(name="primary-b", nodePriority=TIER_PRIMARY, ...),
+    AgentDefinition(name="secondary", nodePriority=TIER_SECONDARY, ...),
+    AgentDefinition(name="fallback", nodePriority=TIER_FALLBACK, ...),
+]
+
+# Within same tier, alphabetical order applies:
+# [critical-handler, primary-a, primary-b, secondary, fallback]
+```
+
+## Pattern 9: Dynamic Priority (Anti-Pattern)
+
+:::danger Anti-Pattern
+Dynamic priority based on runtime state breaks determinism.
+:::
+
+```python
+# BAD: Non-deterministic
+def get_priority(agent_name: str) -> int:
+    load = get_current_load(agent_name)  # Runtime state!
+    return int(load * 100)
+
+# GOOD: Static priority with fallback
+AgentDefinition(name="agent", nodePriority=100)
+# Use FALLBACK strategy if primary is overloaded
+```
+
+## Pattern 10: Testing Determinism
+
+Verify routing is deterministic:
+
+```python
+def test_routing_determinism():
+    """Verify same input produces same routing."""
+    runtime = IntentusRuntime()
+    register_agents(runtime)
+
+    envelope = create_test_envelope()
+
+    # Run 100 times
+    routes = []
+    for _ in range(100):
+        response = runtime.router.route_intent(envelope)
+        routes.append(response.metadata.get("selected_agent"))
+
+    # All should be identical
+    unique_routes = set(routes)
+    assert len(unique_routes) == 1, f"Non-deterministic: {unique_routes}"
+
+def test_ordering_stability():
+    """Verify ordering doesn't change across restarts."""
+    def get_order():
+        runtime = IntentusRuntime()
+        register_agents(runtime)
+        agents = runtime.registry.find_by_capability("ProcessIntent", "1.0")
+        return [a.name for a in compute_agent_order(agents)]
+
+    order1 = get_order()
+    order2 = get_order()
+    order3 = get_order()
+
+    assert order1 == order2 == order3
+```
+
+## Configuration Best Practices
+
+### 1. Document Priority Scheme
+
+```python
+# Priority scheme:
+# 0-9:   Reserved for critical overrides
+# 10-49: Primary production agents
+# 50-99: Secondary/failover agents
+# 100+:  Fallback agents
+```
+
+### 2. Use Meaningful Names
+
+```python
+# Good: alphabetical order is meaningful
+AgentDefinition(name="01-processor-critical")
+AgentDefinition(name="02-processor-primary")
+AgentDefinition(name="03-processor-fallback")
+
+# Bad: alphabetical order is confusing
+AgentDefinition(name="fallback-processor")  # First alphabetically!
+AgentDefinition(name="primary-processor")
+```
+
+### 3. Avoid Priority Collisions
+
+```python
+# Bad: same priority, undefined order
+AgentDefinition(name="agent-a", nodePriority=100)
+AgentDefinition(name="agent-b", nodePriority=100)
+
+# Good: explicit priorities
+AgentDefinition(name="agent-a", nodePriority=100)
+AgentDefinition(name="agent-b", nodePriority=110)
+```
+
+## Summary
+
+| Pattern | Use Case |
+|---------|----------|
+| Primary-Secondary | Simple failover |
+| Regional | Latency optimization |
+| Versioned | Gradual rollout |
+| Capability-Based | Feature routing |
+| Explicit Targeting | Override routing |
+| Broadcast | Aggregation |
+| Parallel | Racing |
+| Priority Tiers | Organized fallback |
+
+## See Also
+
+- [Deterministic Routing](../guarantees/deterministic-routing) — Guarantee specification
+- [Architecture Overview](../architecture/overview) — System design

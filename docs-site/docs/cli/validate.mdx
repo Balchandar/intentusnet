@@ -1,0 +1,333 @@
+---
+sidebar_position: 6
+title: intentusnet validate
+description: Validate envelopes and policies before execution
+---
+
+# intentusnet validate
+
+Validate intent envelopes, policy configurations, and routing before execution.
+
+## Synopsis
+
+```bash
+intentusnet validate [options]
+```
+
+## Options
+
+| Option | Description |
+|--------|-------------|
+| `--envelope FILE` | Validate envelope JSON file |
+| `--policy FILE` | Validate policy configuration |
+| `--intent NAME` | Intent to validate routing for |
+| `--targets AGENTS` | Comma-separated target agents |
+| `--dry-run` | Full validation without execution |
+| `--strict` | Fail on warnings |
+
+## Examples
+
+### Validate Envelope
+
+```bash
+intentusnet validate --envelope request.json
+```
+
+Valid envelope:
+
+```json
+{
+  "valid": true,
+  "envelope": {
+    "intent": "ProcessIntent",
+    "version": "1.0",
+    "payload_size": 256
+  },
+  "checks": [
+    {"check": "version_format", "status": "pass"},
+    {"check": "intent_name", "status": "pass"},
+    {"check": "payload_schema", "status": "pass"},
+    {"check": "metadata_complete", "status": "pass"}
+  ]
+}
+```
+
+Invalid envelope:
+
+```json
+{
+  "valid": false,
+  "errors": [
+    {
+      "field": "intent.name",
+      "error": "Intent name cannot be empty"
+    },
+    {
+      "field": "version",
+      "error": "Unsupported version: 2.0"
+    }
+  ],
+  "checks": [
+    {"check": "version_format", "status": "fail", "message": "Unsupported version"},
+    {"check": "intent_name", "status": "fail", "message": "Empty intent name"}
+  ]
+}
+```
+
+Exit code: `2`
+
+### Validate Policy Configuration
+
+```bash
+intentusnet validate --policy policies.yaml
+```
+
+```json
+{
+  "valid": true,
+  "policy_file": "policies.yaml",
+  "rule_count": 5,
+  "rules": [
+    {"id": "admin-allow", "action": "ALLOW", "valid": true},
+    {"id": "deny-dangerous", "action": "DENY", "valid": true},
+    {"id": "rate-limit", "action": "ALLOW", "valid": true, "rate_limit": 100},
+    {"id": "default-deny", "action": "DENY", "valid": true}
+  ],
+  "warnings": [],
+  "coverage": {
+    "explicit_allows": 2,
+    "explicit_denies": 2,
+    "has_default": true
+  }
+}
+```
+
+Policy with issues:
+
+```json
+{
+  "valid": false,
+  "errors": [
+    {
+      "rule_id": "broken-rule",
+      "error": "Invalid action: MAYBE"
+    }
+  ],
+  "warnings": [
+    {
+      "rule_id": "broad-allow",
+      "warning": "Rule allows all intents for all agents - consider restricting"
+    },
+    {
+      "warning": "No default rule defined - unmatched intents will be denied"
+    }
+  ]
+}
+```
+
+### Validate Routing
+
+Check which agent would handle an intent:
+
+```bash
+intentusnet validate --intent ProcessIntent
+```
+
+```json
+{
+  "intent": "ProcessIntent",
+  "version": "1.0",
+  "routing": {
+    "matching_agents": ["processor-a", "processor-b", "processor-c"],
+    "ordered_agents": ["processor-a", "processor-b", "processor-c"],
+    "would_route_to": "processor-a",
+    "reason": "deterministic_match"
+  },
+  "valid": true
+}
+```
+
+No matching agent:
+
+```json
+{
+  "intent": "UnknownIntent",
+  "version": "1.0",
+  "routing": {
+    "matching_agents": [],
+    "would_route_to": null,
+    "error": "No agent found for intent"
+  },
+  "valid": false
+}
+```
+
+### Validate with Targets
+
+Check policy evaluation for specific targets:
+
+```bash
+intentusnet validate --intent PowerOffIntent --targets hvac,cctv,lighting
+```
+
+```json
+{
+  "intent": "PowerOffIntent",
+  "targets": ["hvac", "cctv", "lighting"],
+  "evaluation": {
+    "hvac": {
+      "action": "ALLOW",
+      "matched_rule": "allow-power-operations"
+    },
+    "cctv": {
+      "action": "DENY",
+      "matched_rule": "protect-cctv"
+    },
+    "lighting": {
+      "action": "ALLOW",
+      "matched_rule": "allow-power-operations"
+    }
+  },
+  "summary": {
+    "allowed": ["hvac", "lighting"],
+    "denied": ["cctv"],
+    "would_execute": 2,
+    "would_filter": 1
+  }
+}
+```
+
+### Full Dry Run
+
+Complete validation without execution:
+
+```bash
+intentusnet validate --envelope request.json --dry-run
+```
+
+```json
+{
+  "dry_run": true,
+  "envelope_valid": true,
+  "policy_evaluation": {
+    "action": "ALLOW",
+    "matched_rule": "default-allow"
+  },
+  "routing": {
+    "would_route_to": "processor-a",
+    "strategy": "DIRECT"
+  },
+  "estimate": {
+    "time_ms": {"typical": 200},
+    "cost": {"typical": 0.002}
+  },
+  "ready_to_execute": true
+}
+```
+
+### Strict Mode
+
+Fail on warnings:
+
+```bash
+intentusnet validate --policy policies.yaml --strict
+```
+
+With warnings (fails in strict mode):
+
+```json
+{
+  "valid": false,
+  "errors": [],
+  "warnings": [
+    {"warning": "Rule 'broad-allow' is overly permissive"}
+  ],
+  "strict_mode": true,
+  "failed_due_to_warnings": true
+}
+```
+
+Exit code: `1`
+
+## Validation Checks
+
+### Envelope Checks
+
+| Check | Description |
+|-------|-------------|
+| `version_format` | Protocol version is supported |
+| `intent_name` | Intent name is valid |
+| `intent_version` | Intent version is valid |
+| `payload_size` | Payload within size limits |
+| `payload_schema` | Payload matches expected schema |
+| `metadata_complete` | Required metadata present |
+| `routing_valid` | Routing options are valid |
+
+### Policy Checks
+
+| Check | Description |
+|-------|-------------|
+| `syntax_valid` | Policy file syntax is correct |
+| `action_valid` | All actions are ALLOW or DENY |
+| `patterns_valid` | Glob patterns are valid |
+| `no_conflicts` | No conflicting rules |
+| `has_default` | Default rule exists |
+| `coverage` | All intents have coverage |
+
+## Use Cases
+
+### CI/CD Validation
+
+```bash
+#!/bin/bash
+# Validate all policy files before deploy
+
+for policy in policies/*.yaml; do
+    if ! intentusnet validate --policy "$policy" --strict; then
+        echo "Policy validation failed: $policy"
+        exit 1
+    fi
+done
+
+echo "All policies valid"
+```
+
+### Pre-Commit Hook
+
+```bash
+#!/bin/bash
+# .git/hooks/pre-commit
+
+# Validate changed envelope files
+for file in $(git diff --cached --name-only | grep '\.json$'); do
+    if [[ "$file" == *"request"* ]]; then
+        intentusnet validate --envelope "$file" --strict || exit 1
+    fi
+done
+```
+
+### Request Validation
+
+```bash
+# Validate before sending
+intentusnet validate --envelope request.json --dry-run
+if [ $? -eq 0 ]; then
+    intentusnet run --intent ProcessIntent --payload @request.json
+fi
+```
+
+## Exit Codes
+
+| Code | Meaning |
+|------|---------|
+| 0 | Valid |
+| 1 | Warnings (strict mode) |
+| 2 | Validation errors |
+| 3 | Routing errors |
+| 12 | Configuration error |
+
+## See Also
+
+- [`intentusnet run`](./run) — Execute after validation
+- [`intentusnet estimate`](./estimate) — Estimate before execution
+- [Policy Design](../advanced/policy-design) — Policy configuration guide

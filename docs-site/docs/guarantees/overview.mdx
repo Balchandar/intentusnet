@@ -1,0 +1,168 @@
+---
+sidebar_position: 1
+title: Runtime Guarantees Overview
+description: Overview of the execution guarantees provided by IntentusNet
+---
+
+# Runtime Guarantees Overview
+
+IntentusNet provides explicit, documented guarantees for production multi-agent systems. This section details what the runtime promises, what it doesn't promise, and the failure modes you should expect.
+
+## The Guarantee Contract
+
+Every production runtime needs a clear contract. IntentusNet's contract is:
+
+| Guarantee                   | Status          | Description                               |
+| --------------------------- | --------------- | ----------------------------------------- |
+| Deterministic Routing       | **Provided**    | Same input → same agent selection order   |
+| Execution Recording         | **Provided**    | Every execution captured with stable hash |
+| Replay Without Re-execution | **Provided**    | Return recorded output, no model calls    |
+| Policy Filtering            | **Provided**    | Partial allow/deny with continuation      |
+| Structured Errors           | **Provided**    | Typed error codes, no silent failures     |
+| Crash Recovery              | **Design Goal** | WAL-backed state persistence              |
+
+:::note Design Goals vs. Implemented Guarantees
+Features marked as "Design Goal" are architecturally planned but may have implementation limitations in the current version. See individual guarantee pages for details.
+:::
+
+## Quick Reference
+
+### What IS Guaranteed (v1.3.x)
+
+```
+✓ Deterministic agent ordering
+✓ Single response per intent
+✓ Execution recording with stable hashes
+✓ Replay returns recorded outputs
+✓ Typed error codes (ErrorCode enum)
+✓ Trace span emission for every decision
+✓ Policy allow/deny evaluation
+```
+
+### What is NOT Guaranteed
+
+```
+✗ Automatic retries (explicit fallback only)
+✗ Transaction rollback (agents responsible)
+✗ Distributed consensus
+✗ Load balancing
+✗ Rate limiting (policy layer, not runtime)
+✗ Agent internal determinism
+```
+
+## Guarantee Categories
+
+### 1. Routing Guarantees
+
+IntentusNet guarantees **deterministic agent selection**:
+
+- Given the same intent and available agents, routing produces the same order
+- Ordering based on: `(isLocal DESC, nodePriority ASC, agentName ASC)`
+- No implicit retries or hidden load balancing
+- Explicit fallback via routing strategy
+
+[Read more: Deterministic Routing →](./deterministic-routing)
+
+### 2. Execution Recording Guarantees
+
+IntentusNet guarantees **complete execution capture**:
+
+- Every execution produces an `ExecutionRecord`
+- Envelope hash computed via SHA-256 for integrity
+- Events recorded with deterministic sequence numbers
+- Final response captured exactly as produced
+
+[Read more: Crash-Safe Execution →](./crash-safe-execution)
+
+### 3. Replay Guarantees
+
+IntentusNet guarantees **deterministic replay**:
+
+- Replay returns the recorded output, not a re-execution
+- No model calls during replay
+- Envelope hash validation available
+- Explicit `replayable` flag on records
+
+[Read more: Replayability →](./replayability)
+
+### 4. Policy Guarantees
+
+IntentusNet guarantees **policy evaluation**:
+
+- Policies evaluated before execution
+- Partial filtering: deny specific targets, allow rest
+- Clear denial reasons in response
+- No silent blocking
+
+[Read more: Policy Filtering →](./policy-filtering)
+
+### 5. Observability Guarantees
+
+IntentusNet guarantees **structured output**:
+
+- Every routing decision produces a `TraceSpan`
+- JSON-structured outputs for CLI tooling
+- Execution IDs for cross-reference
+- Error codes from defined enum
+
+[Read more: Observability Contract →](./observability-contract)
+
+## Failure Modes
+
+IntentusNet makes failure modes explicit:
+
+| Failure             | Behavior                         | Recovery                     |
+| ------------------- | -------------------------------- | ---------------------------- |
+| No matching agent   | `CAPABILITY_NOT_FOUND` error     | Register appropriate agent   |
+| Agent error         | Error propagated, recorded       | Retry with fallback strategy |
+| Policy denial       | Partial execution or full denial | Adjust policy rules          |
+| Crash mid-execution | Recorded events preserved        | Replay from last checkpoint  |
+| Invalid envelope    | `VALIDATION_ERROR`               | Fix envelope structure       |
+
+## Guarantee Versions
+
+Guarantees may evolve across versions:
+
+| Version         | Key Guarantees Added                |
+| --------------- | ----------------------------------- |
+| 0.1.x           | Basic routing, registry             |
+| 0.2.x           | Execution recording, trace spans    |
+| 0.3.x           | Replay engine, stable hashes        |
+| 0.4.x (planned) | Enhanced WAL, distributed recording |
+
+## Verifying Guarantees
+
+You can verify IntentusNet's guarantees programmatically:
+
+```python
+from intentusnet import IntentusRuntime, IntentEnvelope
+
+runtime = IntentusRuntime(enable_recording=True)
+
+# Verify deterministic routing
+envelope = create_test_envelope()
+results = [runtime.router.route_intent(envelope) for _ in range(10)]
+
+# All should select same agent
+agents = set(r.metadata.get('selected_agent') for r in results)
+assert len(agents) == 1, "Routing is non-deterministic"
+
+# Verify recording
+execution_id = results[0].metadata.get('execution_id')
+assert execution_id is not None, "Execution not recorded"
+
+# Verify replay
+replay_result = runtime.replay(execution_id)
+assert replay_result.payload == results[0].payload, "Replay mismatch"
+```
+
+## Next Steps
+
+Explore each guarantee in detail:
+
+- [Deterministic Routing](./deterministic-routing) — How agent selection works
+- [Crash-Safe Execution](./crash-safe-execution) — Execution recording and recovery
+- [Replayability](./replayability) — Replay semantics and safety
+- [Policy Filtering](./policy-filtering) — Allow/deny with partial continuation
+- [Observability Contract](./observability-contract) — Structured output guarantees
+- [Limitations](./limitations) — Explicit non-goals and limitations

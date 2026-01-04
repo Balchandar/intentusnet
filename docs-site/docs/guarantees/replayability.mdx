@@ -1,0 +1,330 @@
+---
+sidebar_position: 4
+title: Replayability
+description: Deterministic replay guarantees and semantics in IntentusNet
+---
+
+# Replayability
+
+IntentusNet provides deterministic replay: return the exact recorded output without re-executing agents or calling models. This document explains replay semantics, safety guarantees, and when replay is appropriate.
+
+## The Guarantee
+
+```
+GUARANTEE: For a replayable ExecutionRecord R with recorded response X,
+           replay(R) always returns X without any agent execution.
+```
+
+This means:
+- No model calls during replay
+- No agent code executed
+- No side effects triggered
+- Exact same response returned
+
+## How Replay Works
+
+```python
+from intentusnet import ReplayEngine, FileExecutionStore
+
+# Load recorded execution
+store = FileExecutionStore(".intentusnet/records")
+record = store.load("exec-a1b2c3d4")
+
+# Create replay engine
+engine = ReplayEngine(record)
+
+# Check if replayable
+is_ok, reason = engine.is_replayable()
+if not is_ok:
+    print(f"Cannot replay: {reason}")
+else:
+    # Replay returns recorded output
+    result = engine.replay()
+    # result.payload == original execution's payload
+```
+
+### ReplayEngine Behavior
+
+```python
+class ReplayEngine:
+    def is_replayable(self) -> Tuple[bool, Optional[str]]:
+        """Check if this record can be safely replayed."""
+        if self.record.finalResponse is None:
+            return False, "execution_incomplete"
+        if not self.record.header.replayable:
+            return False, self.record.header.replayableReason
+        return True, None
+
+    def replay(self, env: Optional[IntentEnvelope] = None) -> ReplayResult:
+        """Return recorded output without re-execution."""
+        if env is not None:
+            # Optional: verify envelope matches
+            current_hash = compute_hash(env)
+            if current_hash != self.record.header.envelopeHash:
+                raise ReplayHashMismatch(...)
+
+        return ReplayResult(
+            payload=self.record.finalResponse.get("payload"),
+            metadata=self.record.finalResponse.get("metadata"),
+            fromReplay=True
+        )
+```
+
+## Replay vs. Re-Execution
+
+| Aspect | Replay | Re-Execution |
+|--------|--------|--------------|
+| Agent code | Not called | Called |
+| Model API calls | None | Made |
+| Side effects | None | May occur |
+| Output | Recorded output | May differ |
+| Latency | Minimal (disk read) | Full execution time |
+| Cost | None (no API calls) | API costs incurred |
+
+## When Records Are Replayable
+
+A record is marked `replayable: true` when:
+
+1. Execution completed successfully (or with a captured error)
+2. `FINAL_RESPONSE` event was recorded
+3. No internal failures during recording
+
+```json
+{
+  "header": {
+    "executionId": "exec-a1b2c3d4",
+    "replayable": true,
+    "replayableReason": null
+  }
+}
+```
+
+## When Records Are NOT Replayable
+
+| Condition | `replayableReason` |
+|-----------|-------------------|
+| Execution crashed mid-way | `execution_incomplete` |
+| Recording failed | `recording_failure` |
+| Envelope corrupted | `envelope_invalid` |
+| Manually marked | `manually_invalidated` |
+
+```json
+{
+  "header": {
+    "executionId": "exec-e5f6g7h8",
+    "replayable": false,
+    "replayableReason": "execution_incomplete"
+  }
+}
+```
+
+## Envelope Hash Validation
+
+Replay supports optional envelope validation:
+
+```python
+# Original envelope
+original_env = IntentEnvelope(
+    intent=IntentRef(name="ProcessIntent"),
+    payload={"data": "original"}
+)
+
+# Later: attempt replay with same envelope
+replay_env = IntentEnvelope(
+    intent=IntentRef(name="ProcessIntent"),
+    payload={"data": "original"}
+)
+
+# Will succeed - hashes match
+result = engine.replay(env=replay_env)
+
+# Modified envelope
+modified_env = IntentEnvelope(
+    intent=IntentRef(name="ProcessIntent"),
+    payload={"data": "modified"}  # Changed!
+)
+
+# Will raise ReplayHashMismatch
+result = engine.replay(env=modified_env)  # Error!
+```
+
+This provides:
+- Integrity verification
+- Detection of envelope tampering
+- Assurance that replay matches original request
+
+## Safe Replay Defaults
+
+IntentusNet defaults to **safe replay**:
+
+```python
+# Default: replay only if explicitly replayable
+result = engine.replay()  # Raises if not replayable
+
+# Explicit: force replay even if questionable
+result = engine.replay(force=True)  # Use with caution
+```
+
+:::danger Forced Replay Risk
+Forcing replay on incomplete records may return partial or incorrect results. Only use `force=True` when you understand the record's state and accept the risks.
+:::
+
+## Replay Use Cases
+
+### 1. Debugging
+
+Reproduce exact execution for debugging:
+
+```bash
+# User reports issue with execution
+$ intentusnet inspect exec-a1b2c3d4
+
+# Replay to see exact output
+$ intentusnet replay exec-a1b2c3d4
+{
+  "replay": true,
+  "original_execution_id": "exec-a1b2c3d4",
+  "payload": {
+    "result": "the exact output user saw"
+  }
+}
+```
+
+### 2. Auditing
+
+Demonstrate what happened at a point in time:
+
+```python
+# Auditor asks: "What did the system return on Jan 15?"
+record = store.load("exec-a1b2c3d4")
+result = engine.replay()
+# result is exactly what was returned, provably
+```
+
+### 3. Testing
+
+Replay recorded executions as test cases:
+
+```python
+def test_historical_behavior():
+    record = store.load("known-good-execution")
+    engine = ReplayEngine(record)
+
+    result = engine.replay()
+
+    # Verify against expected baseline
+    assert result.payload == expected_payload
+```
+
+### 4. Cost Avoidance
+
+Avoid redundant API calls:
+
+```python
+# Check if we've seen this exact request before
+envelope_hash = compute_hash(envelope)
+existing = store.find_by_hash(envelope_hash)
+
+if existing and existing.header.replayable:
+    # Return cached result, no API call
+    return ReplayEngine(existing).replay()
+else:
+    # New request, execute normally
+    return router.route_intent(envelope)
+```
+
+## Replay Output Format
+
+```python
+@dataclass
+class ReplayResult:
+    payload: Dict[str, Any]      # Original response payload
+    metadata: Dict[str, Any]     # Original response metadata
+    fromReplay: bool = True      # Indicates this is a replay
+    originalExecutionId: str     # Reference to original execution
+```
+
+## CLI Replay
+
+```bash
+# Replay an execution
+$ intentusnet replay exec-a1b2c3d4
+{
+  "status": "success",
+  "from_replay": true,
+  "original_execution_id": "exec-a1b2c3d4",
+  "payload": {
+    "result": "processed data"
+  }
+}
+
+# Replay with envelope verification
+$ intentusnet replay exec-a1b2c3d4 --verify-envelope envelope.json
+Envelope hash matches. Replaying...
+{...}
+
+# Force replay (dangerous)
+$ intentusnet replay exec-e5f6g7h8 --force
+WARNING: Forcing replay of non-replayable record
+{...partial result...}
+```
+
+## Replay Guarantees Summary
+
+| Guarantee | Description |
+|-----------|-------------|
+| Output identity | Returns exactly what was recorded |
+| No execution | No agent code runs |
+| No side effects | No external calls made |
+| Hash verification | Optional envelope integrity check |
+| Safe by default | Refuses non-replayable records |
+
+## Limitations
+
+### Replay Cannot Fix Bad Records
+
+If the original execution had issues, replay returns those issues:
+
+```python
+# Original execution returned error
+record = store.load("exec-with-error")
+result = ReplayEngine(record).replay()
+# result contains the original error, not a retry
+```
+
+### Replay Doesn't Update State
+
+Replaying doesn't update any external state:
+
+```python
+# Original execution wrote to database
+# Replay does NOT write to database again
+result = engine.replay()  # Database unchanged
+```
+
+### Time-Sensitive Data
+
+If original response included time-sensitive data:
+
+```python
+# Original response at t0: {"expires_at": "2024-01-16"}
+# Replay at t1 (after expiry): still returns {"expires_at": "2024-01-16"}
+```
+
+Replay returns what was recorded, even if now stale.
+
+## Summary
+
+| Aspect | Behavior |
+|--------|----------|
+| Default mode | Safe (replayable records only) |
+| Output | Exact recorded response |
+| Agent execution | None |
+| Model calls | None |
+| Side effects | None |
+| Hash validation | Optional, recommended |
+
+## Next Steps
+
+- [Replay Semantics (Advanced)](../advanced/replay-semantics) — Deep dive on replay internals
+- [CLI Replay Reference](../cli/replay) — Full CLI documentation

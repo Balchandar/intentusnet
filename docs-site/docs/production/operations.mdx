@@ -1,0 +1,462 @@
+---
+sidebar_position: 3
+title: Production Operations
+description: Operational guide for running IntentusNet in production
+---
+
+# Production Operations
+
+This guide covers deployment, scaling, and operational practices for IntentusNet.
+
+## Deployment Options
+
+### Docker
+
+```dockerfile
+# Dockerfile
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy application
+COPY . .
+
+# Create non-root user
+RUN useradd -m intentusnet
+USER intentusnet
+
+# Configure
+ENV INTENTUSNET_RECORDS_PATH=/data/records
+ENV INTENTUSNET_LOG_LEVEL=INFO
+
+EXPOSE 8080
+
+CMD ["python", "-m", "intentusnet.server"]
+```
+
+```bash
+# Build and run
+docker build -t intentusnet:latest .
+docker run -d \
+  -p 8080:8080 \
+  -v /var/lib/intentusnet/records:/data/records \
+  -e INTENTUSNET_LOG_LEVEL=INFO \
+  intentusnet:latest
+```
+
+### Docker Compose
+
+```yaml
+version: '3.8'
+
+services:
+  intentusnet:
+    build: .
+    ports:
+      - "8080:8080"
+    volumes:
+      - records:/data/records
+    environment:
+      - INTENTUSNET_RECORDS_PATH=/data/records
+      - INTENTUSNET_LOG_LEVEL=INFO
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+
+volumes:
+  records:
+```
+
+### Kubernetes
+
+```yaml
+# deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: intentusnet
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: intentusnet
+  template:
+    metadata:
+      labels:
+        app: intentusnet
+    spec:
+      containers:
+        - name: intentusnet
+          image: intentusnet:latest
+          ports:
+            - containerPort: 8080
+          env:
+            - name: INTENTUSNET_RECORDS_PATH
+              value: /data/records
+          volumeMounts:
+            - name: records
+              mountPath: /data/records
+          resources:
+            requests:
+              cpu: 500m
+              memory: 512Mi
+            limits:
+              cpu: 2000m
+              memory: 2Gi
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 5
+      volumes:
+        - name: records
+          persistentVolumeClaim:
+            claimName: intentusnet-records
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: intentusnet
+spec:
+  selector:
+    app: intentusnet
+  ports:
+    - port: 80
+      targetPort: 8080
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: intentusnet-records
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 100Gi
+```
+
+### systemd
+
+```ini
+# /etc/systemd/system/intentusnet.service
+[Unit]
+Description=IntentusNet Runtime
+After=network.target
+
+[Service]
+Type=simple
+User=intentusnet
+Group=intentusnet
+WorkingDirectory=/opt/intentusnet
+ExecStart=/opt/intentusnet/venv/bin/python -m intentusnet.server
+Restart=always
+RestartSec=5
+
+Environment=INTENTUSNET_RECORDS_PATH=/var/lib/intentusnet/records
+Environment=INTENTUSNET_LOG_LEVEL=INFO
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/intentusnet
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable intentusnet
+sudo systemctl start intentusnet
+```
+
+## Scaling
+
+### Horizontal Scaling
+
+IntentusNet supports horizontal scaling with shared storage:
+
+```
+                    Load Balancer
+                         │
+          ┌──────────────┼──────────────┐
+          │              │              │
+          ▼              ▼              ▼
+    ┌──────────┐   ┌──────────┐   ┌──────────┐
+    │Instance 1│   │Instance 2│   │Instance 3│
+    └────┬─────┘   └────┬─────┘   └────┬─────┘
+         │              │              │
+         └──────────────┼──────────────┘
+                        │
+                        ▼
+                 ┌──────────────┐
+                 │Shared Storage│
+                 │   (NFS/S3)   │
+                 └──────────────┘
+```
+
+### Considerations
+
+| Aspect | Guidance |
+|--------|----------|
+| Statelessness | Runtime is stateless; storage is external |
+| Load balancing | Any strategy (round-robin, least-conn) |
+| Sessions | Not required |
+| Record storage | Shared filesystem or object storage |
+
+## Storage Configuration
+
+### Local Filesystem
+
+```python
+runtime = IntentusRuntime(
+    records_path="/var/lib/intentusnet/records",
+    enable_recording=True
+)
+```
+
+### NFS
+
+```bash
+# Mount NFS share
+sudo mount -t nfs nfs-server:/intentusnet/records /var/lib/intentusnet/records
+```
+
+### S3-Compatible Storage
+
+```python
+from intentusnet.storage import S3ExecutionStore
+
+store = S3ExecutionStore(
+    bucket="intentusnet-records",
+    prefix="executions/",
+    endpoint_url="https://s3.amazonaws.com"  # or MinIO, etc.
+)
+
+runtime = IntentusRuntime(execution_store=store)
+```
+
+## Log Shipping
+
+### Fluentd Configuration
+
+```yaml
+# fluent.conf
+<source>
+  @type tail
+  path /var/log/intentusnet/*.log
+  pos_file /var/log/td-agent/intentusnet.pos
+  tag intentusnet
+  <parse>
+    @type json
+  </parse>
+</source>
+
+<match intentusnet>
+  @type elasticsearch
+  host elasticsearch
+  port 9200
+  index_name intentusnet
+  type_name _doc
+</match>
+```
+
+### Vector Configuration
+
+```toml
+# vector.toml
+[sources.intentusnet_logs]
+type = "file"
+include = ["/var/log/intentusnet/*.log"]
+
+[transforms.parse_json]
+type = "remap"
+inputs = ["intentusnet_logs"]
+source = '''
+. = parse_json!(.message)
+'''
+
+[sinks.loki]
+type = "loki"
+inputs = ["parse_json"]
+endpoint = "http://loki:3100"
+labels = { app = "intentusnet" }
+```
+
+## Backup and Recovery
+
+### Record Backup
+
+```bash
+#!/bin/bash
+# backup-records.sh
+
+DATE=$(date +%Y%m%d)
+RECORDS_PATH="/var/lib/intentusnet/records"
+BACKUP_PATH="/backup/intentusnet"
+
+# Create backup
+tar -czf "${BACKUP_PATH}/records-${DATE}.tar.gz" -C "${RECORDS_PATH}" .
+
+# Upload to S3
+aws s3 cp "${BACKUP_PATH}/records-${DATE}.tar.gz" s3://backup-bucket/intentusnet/
+
+# Cleanup old local backups (keep 7 days)
+find "${BACKUP_PATH}" -name "records-*.tar.gz" -mtime +7 -delete
+```
+
+### Recovery
+
+```bash
+#!/bin/bash
+# restore-records.sh
+
+DATE=$1
+RECORDS_PATH="/var/lib/intentusnet/records"
+
+# Download from S3
+aws s3 cp "s3://backup-bucket/intentusnet/records-${DATE}.tar.gz" /tmp/
+
+# Restore
+tar -xzf "/tmp/records-${DATE}.tar.gz" -C "${RECORDS_PATH}"
+```
+
+## Maintenance
+
+### Rolling Restart
+
+```bash
+# Kubernetes
+kubectl rollout restart deployment/intentusnet
+
+# Docker Swarm
+docker service update --force intentusnet
+```
+
+### Configuration Reload
+
+```python
+# Support config reload without restart
+import signal
+
+def reload_config(signum, frame):
+    global runtime
+    new_config = load_config()
+    runtime.update_config(new_config)
+    logger.info("Configuration reloaded")
+
+signal.signal(signal.SIGHUP, reload_config)
+```
+
+### Record Cleanup
+
+```python
+from datetime import datetime, timedelta
+
+def cleanup_old_records(retention_days: int = 30):
+    """Delete records older than retention period."""
+    store = FileExecutionStore(".intentusnet/records")
+    cutoff = datetime.utcnow() - timedelta(days=retention_days)
+
+    deleted = 0
+    for exec_id in store.list_all():
+        record = store.load(exec_id)
+        created = datetime.fromisoformat(record.header.createdUtcIso.rstrip('Z'))
+
+        if created < cutoff:
+            store.delete(exec_id)
+            deleted += 1
+
+    logger.info(f"Cleaned up {deleted} old records")
+```
+
+## Runbooks
+
+### High Error Rate
+
+```
+1. Check error distribution:
+   intentusnet inspect --list --status error --since 1h | jq 'group_by(.error.code)'
+
+2. Identify problematic agents:
+   intentusnet inspect --list --status error | jq 'group_by(.agent)'
+
+3. Check agent health:
+   intentusnet agents --status
+
+4. Review specific failures:
+   intentusnet inspect <exec-id> --events
+
+5. If agent-specific, scale down affected agent
+6. If widespread, check shared dependencies (DB, external APIs)
+```
+
+### High Latency
+
+```
+1. Check latency percentiles:
+   intentusnet metrics --latency
+
+2. Identify slow intents:
+   intentusnet inspect --list --format json | jq 'sort_by(.latency_ms) | reverse | .[0:10]'
+
+3. Check slow agent:
+   intentusnet inspect <slow-exec-id> --events
+
+4. Verify external dependencies
+5. Consider scaling affected agents
+```
+
+### Disk Full
+
+```
+1. Check disk usage:
+   df -h /var/lib/intentusnet/records
+
+2. Identify large record files:
+   du -sh /var/lib/intentusnet/records/* | sort -hr | head
+
+3. Archive old records:
+   ./backup-records.sh
+
+4. Clean up old records:
+   python -c "from cleanup import cleanup_old_records; cleanup_old_records(7)"
+
+5. Consider moving to object storage
+```
+
+## Summary
+
+| Component | Recommendation |
+|-----------|---------------|
+| Container | Docker with resource limits |
+| Orchestration | Kubernetes for production |
+| Storage | Shared filesystem or S3 |
+| Logging | Structured JSON, shipped to central system |
+| Backups | Daily, retained 30 days minimum |
+| Monitoring | Prometheus + Grafana |
+
+## See Also
+
+- [Production Observability](./observability) — Monitoring setup
+- [Production Security](./security) — Security configuration

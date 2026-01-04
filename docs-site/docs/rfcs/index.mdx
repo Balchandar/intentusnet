@@ -1,0 +1,107 @@
+---
+sidebar_position: 1
+title: RFCs Index
+description: Request for Comments documents for IntentusNet
+---
+
+# RFCs Index
+
+IntentusNet uses RFCs (Request for Comments) to propose and document significant design decisions. This page indexes all RFCs and their status.
+
+## RFC Process
+
+RFCs are used for:
+
+- Major architectural decisions
+- New guarantee additions
+- Breaking changes
+- Protocol modifications
+
+### RFC Lifecycle
+
+```
+DRAFT → PROPOSED → ACCEPTED → IMPLEMENTED
+                 ↘ REJECTED
+```
+
+## Current RFCs
+
+| RFC                                             | Title                    | Status      | Summary                                            |
+| ----------------------------------------------- | ------------------------ | ----------- | -------------------------------------------------- |
+| [RFC-0001](./rfc-0001-debuggable-llm-execution) | Debuggable LLM Execution | IMPLEMENTED | Foundation for deterministic, replayable execution |
+
+## RFC Format
+
+Each RFC follows this structure:
+
+1. **Summary** — One-paragraph overview
+2. **Motivation** — Why is this needed?
+3. **Design** — Technical details
+4. **Alternatives** — What else was considered
+5. **Implications** — What changes
+6. **Migration** — How to adopt
+
+## Contributing RFCs
+
+RFCs live in the IntentusNet repository:
+
+```
+intentusnet/
+└── rfcs/
+    ├── rfc-0001-debuggable-llm-execution.md
+    └── ...
+```
+
+To propose an RFC:
+
+1. Fork the repository
+2. Create `docs/rfcs/rfc-NNNN-title.md`
+3. Follow the RFC template
+4. Submit a pull request
+5. Discuss in PR comments
+6. Maintainers accept/reject
+
+## RFC Template
+
+```markdown
+# RFC-NNNN: Title
+
+## Status
+
+DRAFT
+
+## Summary
+
+One paragraph summary.
+
+## Motivation
+
+Why is this change needed?
+
+## Design
+
+Detailed technical design.
+
+### [Subsections as needed]
+
+## Alternatives Considered
+
+What other approaches were considered?
+
+## Implications
+
+- Backward compatibility
+- Migration requirements
+- Performance impact
+
+## Open Questions
+
+Any unresolved issues?
+```
+
+## External Links
+
+For the full RFC documents with complete technical details:
+
+- [IntentusNet GitHub Repository](https://github.com/Balchandar/intentusnet)
+- [docs/rfcs/ directory](https://github.com/Balchandar/intentusnet/tree/main/rfcs)

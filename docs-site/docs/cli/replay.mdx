@@ -1,0 +1,245 @@
+---
+sidebar_position: 4
+title: intentusnet replay
+description: Replay recorded executions via the CLI
+---
+
+# intentusnet replay
+
+Replay a recorded execution to return the exact recorded output without re-executing agents or models.
+
+## Synopsis
+
+```bash
+intentusnet replay <execution_id> [options]
+```
+
+## Options
+
+| Option | Description |
+|--------|-------------|
+| `--verify-envelope FILE` | Verify envelope hash matches |
+| `--force` | Force replay even if not replayable (dangerous) |
+| `--show-diff` | Show difference from current execution |
+| `--output FILE` | Write result to file |
+
+## Examples
+
+### Basic Replay
+
+```bash
+intentusnet replay exec-a1b2c3d4
+```
+
+Output:
+
+```json
+{
+  "status": "success",
+  "from_replay": true,
+  "original_execution_id": "exec-a1b2c3d4",
+  "original_timestamp": "2024-01-15T10:30:00.123456Z",
+  "payload": {
+    "result": "processed",
+    "data": "original output"
+  },
+  "metadata": {
+    "agent": "processor-a",
+    "latency_ms": 127
+  }
+}
+```
+
+### Verify Envelope Hash
+
+Ensure the replay matches the original request:
+
+```bash
+intentusnet replay exec-a1b2c3d4 --verify-envelope request.json
+```
+
+If hashes match:
+
+```json
+{
+  "envelope_verified": true,
+  "hash": "sha256:e3b0c44298fc...",
+  "status": "success",
+  "from_replay": true,
+  "payload": {...}
+}
+```
+
+If hashes don't match:
+
+```json
+{
+  "error": {
+    "code": "REPLAY_HASH_MISMATCH",
+    "message": "Envelope hash does not match recorded execution",
+    "details": {
+      "recorded_hash": "sha256:e3b0c44298fc...",
+      "provided_hash": "sha256:a1b2c3d4e5f6..."
+    }
+  }
+}
+```
+
+Exit code: `11`
+
+### Force Replay
+
+Force replay of incomplete or non-replayable records:
+
+```bash
+intentusnet replay exec-m3n4o5p6 --force
+```
+
+Output:
+
+```json
+{
+  "warning": "Forced replay of non-replayable record",
+  "replayable_reason": "execution_incomplete",
+  "status": "partial",
+  "from_replay": true,
+  "last_event": {
+    "seq": 2,
+    "type": "AGENT_ATTEMPT_START"
+  },
+  "payload": null
+}
+```
+
+:::danger Forced Replay
+Forcing replay on incomplete records may return partial or incorrect results. Only use when you understand the implications.
+:::
+
+### Compare with Current Execution
+
+Show what would be different if re-executed:
+
+```bash
+intentusnet replay exec-a1b2c3d4 --show-diff
+```
+
+```json
+{
+  "from_replay": true,
+  "payload": {
+    "result": "processed"
+  },
+  "diff": {
+    "note": "Current execution would route to same agent",
+    "agent_changed": false,
+    "policy_changed": false
+  }
+}
+```
+
+### Write to File
+
+```bash
+intentusnet replay exec-a1b2c3d4 --output result.json
+```
+
+## Non-Replayable Records
+
+When a record is not replayable:
+
+```bash
+intentusnet replay exec-incomplete
+```
+
+```json
+{
+  "error": {
+    "code": "NOT_REPLAYABLE",
+    "message": "Record is not replayable",
+    "details": {
+      "execution_id": "exec-incomplete",
+      "replayable": false,
+      "reason": "execution_incomplete",
+      "last_event": "AGENT_ATTEMPT_START"
+    }
+  }
+}
+```
+
+Exit code: `11`
+
+## Use Cases
+
+### Debugging
+
+Reproduce exact output for debugging:
+
+```bash
+# User reports issue
+intentusnet replay exec-a1b2c3d4 > debug_output.json
+```
+
+### Auditing
+
+Prove what was returned at a point in time:
+
+```bash
+# Auditor request
+intentusnet replay exec-a1b2c3d4 --verify-envelope original_request.json
+```
+
+### Testing
+
+Use recorded outputs as test fixtures:
+
+```bash
+# Record baseline
+intentusnet run --intent TestIntent --payload @test.json > baseline.json
+EXEC_ID=$(cat baseline.json | jq -r '.execution_id')
+
+# Later: verify replay matches
+intentusnet replay $EXEC_ID > replay.json
+diff baseline.json replay.json
+```
+
+### Cost Avoidance
+
+Avoid re-running expensive operations:
+
+```bash
+# Check if already executed
+EXISTING=$(intentusnet inspect --list --intent ExpensiveIntent | jq -r '.[0].execution_id')
+
+if [ -n "$EXISTING" ]; then
+    # Replay instead of re-executing
+    intentusnet replay $EXISTING
+else
+    # Execute new
+    intentusnet run --intent ExpensiveIntent --payload @data.json
+fi
+```
+
+## Batch Replay
+
+Replay multiple executions:
+
+```bash
+for exec_id in $(intentusnet inspect --list --intent ProcessIntent | jq -r '.[].execution_id'); do
+    echo "Replaying: $exec_id"
+    intentusnet replay $exec_id --output "replays/${exec_id}.json"
+done
+```
+
+## Exit Codes
+
+| Code | Meaning |
+|------|---------|
+| 0 | Success |
+| 1 | General error |
+| 10 | Record not found |
+| 11 | Not replayable / hash mismatch |
+
+## See Also
+
+- [`intentusnet inspect`](./inspect) — View execution details
+- [Replayability Guarantees](../guarantees/replayability) — Replay semantics

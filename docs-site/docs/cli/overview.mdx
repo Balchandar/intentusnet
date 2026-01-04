@@ -1,0 +1,206 @@
+---
+sidebar_position: 1
+title: CLI Overview
+description: Command-line interface overview for IntentusNet
+---
+
+# CLI Overview
+
+IntentusNet provides a CLI-first interface for executing intents, inspecting executions, and replaying recorded outputs. All commands produce structured JSON output suitable for scripting and automation.
+
+## Installation
+
+The CLI is included with the IntentusNet package:
+
+```bash
+pip install intentusnet
+```
+
+Verify installation:
+
+```bash
+intentusnet --version
+# intentusnet 1.3.0
+```
+
+## Command Summary
+
+| Command                              | Description                       |
+| ------------------------------------ | --------------------------------- |
+| [`intentusnet run`](./run)           | Execute an intent                 |
+| [`intentusnet inspect`](./inspect)   | Inspect execution records         |
+| [`intentusnet replay`](./replay)     | Replay a recorded execution       |
+| [`intentusnet estimate`](./estimate) | Estimate execution cost/resources |
+| [`intentusnet validate`](./validate) | Validate envelope or policy       |
+
+## Global Options
+
+All commands support these global options:
+
+```bash
+intentusnet [command] [options]
+
+Global Options:
+  --help, -h          Show help message
+  --version, -v       Show version
+  --format FORMAT     Output format: json (default), text, yaml
+  --quiet, -q         Suppress non-essential output
+  --verbose           Enable verbose logging
+  --config FILE       Path to config file
+  --records-path DIR  Path to execution records
+```
+
+## Output Formats
+
+### JSON (Default)
+
+```bash
+intentusnet inspect exec-a1b2c3d4
+```
+
+```json
+{
+  "execution_id": "exec-a1b2c3d4",
+  "status": "completed",
+  "intent": "ProcessIntent",
+  ...
+}
+```
+
+### Text
+
+```bash
+intentusnet inspect exec-a1b2c3d4 --format text
+```
+
+```
+Execution: exec-a1b2c3d4
+Status:    completed
+Intent:    ProcessIntent
+...
+```
+
+### YAML
+
+```bash
+intentusnet inspect exec-a1b2c3d4 --format yaml
+```
+
+```yaml
+execution_id: exec-a1b2c3d4
+status: completed
+intent: ProcessIntent
+...
+```
+
+## Exit Codes
+
+All commands return semantic exit codes:
+
+| Exit Code | Meaning             |
+| --------- | ------------------- |
+| 0         | Success             |
+| 1         | General error       |
+| 2         | Validation error    |
+| 3         | Routing error       |
+| 4         | Agent error         |
+| 5         | Policy denial       |
+| 10        | Record not found    |
+| 11        | Replay not possible |
+| 12        | Configuration error |
+
+### Scripting Example
+
+```bash
+#!/bin/bash
+
+intentusnet run --intent DeployIntent --payload @deploy.json
+
+case $? in
+    0) echo "Success" ;;
+    4) echo "Agent failed, check logs" ;;
+    5) echo "Policy denied, check permissions" ;;
+    *) echo "Unexpected error: $?" ;;
+esac
+```
+
+## Piping and Filtering
+
+CLI output is designed for Unix tooling:
+
+```bash
+# List failed executions
+intentusnet inspect --list | jq '.[] | select(.status == "error")'
+
+# Extract execution IDs
+intentusnet inspect --list --format json | jq -r '.[].execution_id'
+
+# Count by intent
+intentusnet inspect --list --format json | jq -r '.[].intent' | sort | uniq -c
+
+# Grep for specific errors
+intentusnet inspect exec-a1b2c3d4 | grep -i "timeout"
+```
+
+## SSH-Friendly
+
+All commands work over SSH:
+
+```bash
+# Remote execution
+ssh prod-server "intentusnet run --intent HealthCheck"
+
+# Remote inspection
+ssh prod-server "intentusnet inspect --list --status error"
+
+# Remote replay
+ssh prod-server "intentusnet replay exec-a1b2c3d4"
+```
+
+## Configuration File
+
+Create `.intentusnet.yaml`:
+
+```yaml
+records_path: /var/lib/intentusnet/records
+log_level: INFO
+default_format: json
+
+runtime:
+  enable_recording: true
+  timeout_ms: 30000
+
+policy:
+  default_action: deny
+```
+
+Use with:
+
+```bash
+intentusnet --config /path/to/.intentusnet.yaml run --intent ProcessIntent
+```
+
+## Environment Variables
+
+| Variable                   | Description                 | Default                |
+| -------------------------- | --------------------------- | ---------------------- |
+| `INTENTUSNET_RECORDS_PATH` | Execution records directory | `.intentusnet/records` |
+| `INTENTUSNET_LOG_LEVEL`    | Logging level               | `INFO`                 |
+| `INTENTUSNET_FORMAT`       | Default output format       | `json`                 |
+| `INTENTUSNET_CONFIG`       | Config file path            | `.intentusnet.yaml`    |
+
+## Help
+
+Get help for any command:
+
+```bash
+intentusnet --help
+intentusnet run --help
+intentusnet inspect --help
+```
+
+## Next Steps
+
+- [`intentusnet run`](./run) — Execute intents
+- [`intentusnet inspect`](./inspect) — View execution records
+- [`intentusnet replay`](./replay) — Replay recorded executions

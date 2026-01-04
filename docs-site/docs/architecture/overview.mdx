@@ -1,0 +1,273 @@
+---
+sidebar_position: 1
+title: Architecture Overview
+description: High-level architecture of the IntentusNet runtime
+---
+
+# Architecture Overview
+
+IntentusNet is designed as a layered runtime with clear separation of concerns. This document provides a high-level view of the system architecture.
+
+## System Architecture
+
+```mermaid
+flowchart TB
+    subgraph Client["Client Layer"]
+        APP[Application]
+        IC[IntentusClient]
+    end
+
+    subgraph Transport["Transport Layer"]
+        direction LR
+        IP[In-Process]
+        HTTP[HTTP]
+        WS[WebSocket]
+        ZMQ[ZeroMQ]
+        MCP[MCP Adapter]
+    end
+
+    subgraph Runtime["IntentusNet Runtime"]
+        direction TB
+        MW[Middleware Pipeline]
+        IR[IntentRouter]
+        AR[AgentRegistry]
+        PE[PolicyEngine]
+        ER[ExecutionRecorder]
+        TS[TraceSink]
+    end
+
+    subgraph Persistence["Persistence Layer"]
+        FES[FileExecutionStore]
+        REC[Execution Records]
+    end
+
+    subgraph Agents["Agent Layer"]
+        A1[Agent A]
+        A2[Agent B]
+        A3[Agent C]
+    end
+
+    APP --> IC
+    IC --> Transport
+    Transport --> MW
+    MW --> IR
+    IR <--> AR
+    IR <--> PE
+    IR --> ER
+    IR --> TS
+    IR --> Agents
+    ER --> FES
+    FES --> REC
+```
+
+## Core Components
+
+### 1. IntentusClient
+
+The client API for sending intents:
+
+```python
+from intentusnet import IntentusClient
+
+client = IntentusClient(transport)
+response = client.send_intent(
+    intent_name="ProcessIntent",
+    payload={"data": "input"},
+    priority=Priority.NORMAL
+)
+```
+
+**Responsibilities:**
+- Build valid `IntentEnvelope`
+- Delegate to transport
+- Return `AgentResponse`
+
+### 2. Transport Layer
+
+Protocol abstraction for wire communication:
+
+| Transport | Use Case |
+|-----------|----------|
+| `InProcessTransport` | Same-process routing, testing |
+| `HTTPTransport` | Remote HTTP endpoints |
+| `WebSocketTransport` | Persistent connections |
+| `ZeroMQTransport` | High-performance messaging |
+| `MCPAdapter` | MCP protocol bridge |
+
+### 3. IntentRouter
+
+The deterministic routing engine:
+
+```mermaid
+flowchart LR
+    E[IntentEnvelope] --> V[Validate]
+    V --> M[Match Capabilities]
+    M --> S[Sort Agents]
+    S --> ST[Apply Strategy]
+    ST --> EX[Execute]
+    EX --> R[Record]
+    R --> RES[Response]
+```
+
+**Responsibilities:**
+- Capability matching
+- Deterministic agent ordering
+- Strategy execution (DIRECT, FALLBACK, BROADCAST, PARALLEL)
+- Execution recording
+- Trace emission
+
+### 4. AgentRegistry
+
+Central agent storage and lookup:
+
+```python
+from intentusnet import AgentRegistry
+
+registry = AgentRegistry()
+registry.register(agent_definition)
+agents = registry.find_by_capability("ProcessIntent", "1.0")
+```
+
+**Features:**
+- Agent registration/deregistration
+- Capability-based lookup
+- Health tracking
+- Deterministic ordering support
+
+### 5. PolicyEngine
+
+Policy evaluation and filtering:
+
+```mermaid
+flowchart LR
+    I[Intent] --> E[Evaluate Rules]
+    E --> A{Action?}
+    A -->|ALLOW| P[Proceed]
+    A -->|DENY| F[Filter Target]
+    F --> C{More Targets?}
+    C -->|Yes| P
+    C -->|No| D[Deny All]
+```
+
+### 6. ExecutionRecorder
+
+Records execution for replay:
+
+```python
+from intentusnet import ExecutionRecord, InMemoryExecutionRecorder
+
+recorder = InMemoryExecutionRecorder()
+recorder.record_event(ExecutionEvent(seq=1, type="INTENT_RECEIVED", ...))
+record = recorder.finalize()
+```
+
+### 7. TraceSink
+
+Collects trace spans:
+
+```python
+class TraceSink(Protocol):
+    def emit(span: TraceSpan) -> None:
+        """Emit a trace span for collection."""
+```
+
+## Component Interaction
+
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant T as Transport
+    participant R as Router
+    participant P as Policy
+    participant A as Agent
+    participant S as Store
+
+    C->>T: send_intent(envelope)
+    T->>R: route_intent(envelope)
+    R->>P: evaluate(envelope)
+    P-->>R: filtered_targets
+    R->>R: select_agent()
+    R->>S: create_record()
+    R->>A: handle(envelope)
+    A-->>R: response
+    R->>S: finalize_record()
+    R-->>T: response
+    T-->>C: response
+```
+
+## Data Structures
+
+### IntentEnvelope
+
+The canonical wire-level representation:
+
+```python
+@dataclass
+class IntentEnvelope:
+    version: str              # Protocol version ("1.0")
+    intent: IntentRef         # Intent name + version
+    payload: Dict[str, Any]   # Input data
+    context: IntentContext    # Source, timestamp, priority
+    metadata: IntentMetadata  # Request ID, trace ID
+    routing: RoutingOptions   # Strategy, targets
+    routingMetadata: Dict     # Decision tracking
+```
+
+### AgentResponse
+
+Unified response format:
+
+```python
+@dataclass
+class AgentResponse:
+    version: str                      # "1.0"
+    status: str                       # "success" | "error"
+    payload: Optional[Dict[str, Any]] # Result data
+    metadata: Dict[str, Any]          # Execution metadata
+    error: Optional[ErrorInfo]        # Error details if failed
+```
+
+## Layered Design
+
+```
+┌─────────────────────────────────────────┐
+│            Application Code             │
+├─────────────────────────────────────────┤
+│            IntentusClient               │
+├─────────────────────────────────────────┤
+│           Transport Layer               │
+├─────────────────────────────────────────┤
+│   ┌─────────────────────────────────┐   │
+│   │     Middleware Pipeline         │   │
+│   ├─────────────────────────────────┤   │
+│   │     IntentRouter               │   │
+│   │  ┌────────┬────────┬────────┐  │   │
+│   │  │Registry│ Policy │Recorder│  │   │
+│   │  └────────┴────────┴────────┘  │   │
+│   └─────────────────────────────────┘   │
+├─────────────────────────────────────────┤
+│           Persistence Layer             │
+├─────────────────────────────────────────┤
+│              Agent Layer                │
+└─────────────────────────────────────────┘
+```
+
+## Extension Points
+
+IntentusNet is extensible at multiple points:
+
+| Extension Point | Interface | Purpose |
+|-----------------|-----------|---------|
+| Transport | `Transport` protocol | Custom wire protocols |
+| Middleware | `RouterMiddleware` | Request/response hooks |
+| Agent | `BaseAgent` | Custom agent implementations |
+| Store | `ExecutionStore` | Custom persistence backends |
+| TraceSink | `TraceSink` | Custom trace collection |
+| EMCLProvider | `EMCLProvider` | Custom encryption |
+
+## Next Steps
+
+- [Data Flow](./data-flow) — Detailed execution flow
+- [Determinism Model](./determinism-model) — Where determinism applies
+- [Failure Model](./failure-model) — Error handling architecture
+- [Security Model](./security-model) — Trust boundaries

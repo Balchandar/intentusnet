@@ -1,0 +1,286 @@
+---
+sidebar_position: 3
+title: intentusnet inspect
+description: Inspect execution records via the CLI
+---
+
+# intentusnet inspect
+
+Inspect execution records for debugging, auditing, and analysis.
+
+## Synopsis
+
+```bash
+intentusnet inspect [execution_id] [options]
+```
+
+## Options
+
+| Option | Description |
+|--------|-------------|
+| `--list` | List all executions |
+| `--status STATUS` | Filter by status: success, error, incomplete |
+| `--intent NAME` | Filter by intent name |
+| `--agent NAME` | Filter by agent name |
+| `--since DATETIME` | Filter executions since datetime |
+| `--until DATETIME` | Filter executions until datetime |
+| `--limit N` | Limit results (default: 100) |
+| `--events` | Include full event trace |
+| `--envelope` | Include original envelope |
+| `--error-code CODE` | Filter by error code |
+
+## Examples
+
+### Inspect Single Execution
+
+```bash
+intentusnet inspect exec-a1b2c3d4
+```
+
+Output:
+
+```json
+{
+  "execution_id": "exec-a1b2c3d4",
+  "created_at": "2024-01-15T10:30:00.123456Z",
+  "intent": "ProcessIntent",
+  "intent_version": "1.0",
+  "status": "completed",
+  "agent": "processor-a",
+  "latency_ms": 127,
+  "envelope_hash": "sha256:e3b0c44298fc1c149afbf4c8996fb924...",
+  "replayable": true,
+  "event_count": 5,
+  "routing": {
+    "strategy": "DIRECT",
+    "decision": "deterministic_match"
+  }
+}
+```
+
+### With Full Events
+
+```bash
+intentusnet inspect exec-a1b2c3d4 --events
+```
+
+```json
+{
+  "execution_id": "exec-a1b2c3d4",
+  ...
+  "events": [
+    {
+      "seq": 1,
+      "type": "INTENT_RECEIVED",
+      "timestamp": "2024-01-15T10:30:00.100Z",
+      "payload": {"intent": "ProcessIntent"}
+    },
+    {
+      "seq": 2,
+      "type": "AGENT_ATTEMPT_START",
+      "timestamp": "2024-01-15T10:30:00.105Z",
+      "payload": {"agent": "processor-a", "attempt": 1}
+    },
+    {
+      "seq": 3,
+      "type": "AGENT_ATTEMPT_END",
+      "timestamp": "2024-01-15T10:30:00.220Z",
+      "payload": {"agent": "processor-a", "status": "success", "latency_ms": 115}
+    },
+    {
+      "seq": 4,
+      "type": "ROUTER_DECISION",
+      "timestamp": "2024-01-15T10:30:00.225Z",
+      "payload": {"agent": "processor-a", "reason": "deterministic_match"}
+    },
+    {
+      "seq": 5,
+      "type": "FINAL_RESPONSE",
+      "timestamp": "2024-01-15T10:30:00.227Z",
+      "payload": {"status": "success"}
+    }
+  ]
+}
+```
+
+### With Original Envelope
+
+```bash
+intentusnet inspect exec-a1b2c3d4 --envelope
+```
+
+```json
+{
+  "execution_id": "exec-a1b2c3d4",
+  ...
+  "envelope": {
+    "version": "1.0",
+    "intent": {"name": "ProcessIntent", "version": "1.0"},
+    "payload": {"data": "original input"},
+    "context": {...},
+    "metadata": {...},
+    "routing": {...}
+  }
+}
+```
+
+### List All Executions
+
+```bash
+intentusnet inspect --list
+```
+
+```json
+[
+  {
+    "execution_id": "exec-a1b2c3d4",
+    "created_at": "2024-01-15T10:30:00Z",
+    "intent": "ProcessIntent",
+    "status": "completed",
+    "agent": "processor-a"
+  },
+  {
+    "execution_id": "exec-e5f6g7h8",
+    "created_at": "2024-01-15T10:31:00Z",
+    "intent": "ProcessIntent",
+    "status": "error",
+    "agent": "processor-a"
+  }
+]
+```
+
+### Text Format List
+
+```bash
+intentusnet inspect --list --format text
+```
+
+```
+EXECUTION_ID      CREATED_AT           INTENT           STATUS     AGENT
+exec-a1b2c3d4     2024-01-15T10:30:00  ProcessIntent    completed  processor-a
+exec-e5f6g7h8     2024-01-15T10:31:00  ProcessIntent    error      processor-a
+exec-i9j0k1l2     2024-01-15T10:32:00  SearchIntent     completed  searcher-b
+```
+
+### Filter by Status
+
+```bash
+intentusnet inspect --list --status error
+```
+
+### Filter by Intent
+
+```bash
+intentusnet inspect --list --intent ProcessIntent
+```
+
+### Filter by Agent
+
+```bash
+intentusnet inspect --list --agent processor-a
+```
+
+### Filter by Time Range
+
+```bash
+# Since a specific time
+intentusnet inspect --list --since "2024-01-15T10:00:00Z"
+
+# Until a specific time
+intentusnet inspect --list --until "2024-01-15T12:00:00Z"
+
+# Time range
+intentusnet inspect --list \
+    --since "2024-01-15T10:00:00Z" \
+    --until "2024-01-15T12:00:00Z"
+```
+
+### Filter by Error Code
+
+```bash
+intentusnet inspect --list --error-code AGENT_TIMEOUT
+```
+
+### Limit Results
+
+```bash
+intentusnet inspect --list --limit 10
+```
+
+### Inspect Incomplete Executions
+
+```bash
+intentusnet inspect --list --status incomplete
+```
+
+Output:
+
+```json
+[
+  {
+    "execution_id": "exec-m3n4o5p6",
+    "created_at": "2024-01-15T10:35:00Z",
+    "intent": "ProcessIntent",
+    "status": "incomplete",
+    "last_event": {
+      "seq": 2,
+      "type": "AGENT_ATTEMPT_START"
+    },
+    "replayable": false,
+    "replayable_reason": "execution_incomplete"
+  }
+]
+```
+
+## Advanced Usage
+
+### Analyze Fallback Patterns
+
+```bash
+intentusnet inspect --list --format json | jq '
+  [.[] | select(.routing.strategy == "FALLBACK")] |
+  group_by(.routing.attempts | length) |
+  map({attempts: .[0].routing.attempts | length, count: length})
+'
+```
+
+### Find Slow Executions
+
+```bash
+intentusnet inspect --list --format json | jq '
+  [.[] | select(.latency_ms > 1000)] |
+  sort_by(.latency_ms) |
+  reverse
+'
+```
+
+### Error Code Distribution
+
+```bash
+intentusnet inspect --list --status error --format json | jq '
+  group_by(.error.code) |
+  map({code: .[0].error.code, count: length}) |
+  sort_by(.count) |
+  reverse
+'
+```
+
+### Export for Analysis
+
+```bash
+intentusnet inspect --list --format json > executions.json
+```
+
+## Exit Codes
+
+| Code | Meaning |
+|------|---------|
+| 0 | Success |
+| 1 | General error |
+| 10 | Record not found |
+| 12 | Invalid filter |
+
+## See Also
+
+- [`intentusnet replay`](./replay) — Replay an execution
+- [`intentusnet run`](./run) — Execute a new intent

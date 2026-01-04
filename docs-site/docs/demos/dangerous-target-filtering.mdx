@@ -1,0 +1,292 @@
+---
+sidebar_position: 2
+title: "Demo: Dangerous Target Filtering"
+description: Policy filtering protects CCTV while allowing other systems
+---
+
+# Demo: Dangerous Target Filtering
+
+This demo shows how IntentusNet's policy filtering protects critical systems while allowing safe operations to proceed.
+
+## Scenario
+
+A building management system receives a maintenance power-off request. The request targets multiple systems, including the CCTV security cameras which should **never** be powered off.
+
+## Input Intent
+
+```json
+{
+  "intent": {
+    "name": "PowerOffIntent",
+    "version": "1.0"
+  },
+  "payload": {
+    "action": "power_off",
+    "reason": "Scheduled maintenance",
+    "targets": [
+      "hvac-controller",
+      "lighting-controller",
+      "cctv-controller",
+      "server-controller"
+    ]
+  },
+  "context": {
+    "sourceAgent": "maintenance-scheduler",
+    "priority": "HIGH",
+    "tags": ["maintenance", "scheduled"]
+  }
+}
+```
+
+## Policy Configuration
+
+```python
+policies = [
+    PolicyRule(
+        id="protect-cctv",
+        action=PolicyAction.DENY,
+        intents=["PowerOffIntent", "RestartIntent"],
+        agents=["cctv-controller"],
+        roles=["*"],
+        tenants=["*"]
+    ),
+    PolicyRule(
+        id="allow-maintenance",
+        action=PolicyAction.ALLOW,
+        intents=["PowerOffIntent"],
+        agents=["*"],
+        roles=["operator", "admin"],
+        tenants=["*"]
+    ),
+]
+```
+
+## Policy Evaluation
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    Policy Evaluation                         │
+├─────────────────────────────────────────────────────────────┤
+│ Target              │ Rule Matched      │ Decision          │
+├─────────────────────┼───────────────────┼───────────────────┤
+│ hvac-controller     │ allow-maintenance │ ✓ ALLOW           │
+│ lighting-controller │ allow-maintenance │ ✓ ALLOW           │
+│ cctv-controller     │ protect-cctv      │ ✗ DENY            │
+│ server-controller   │ allow-maintenance │ ✓ ALLOW           │
+└─────────────────────────────────────────────────────────────┘
+
+Summary: 3 allowed, 1 filtered
+Intent proceeds for allowed targets.
+```
+
+## Route Result
+
+```json
+{
+  "routing": {
+    "strategy": "BROADCAST",
+    "requested_agents": [
+      "hvac-controller",
+      "lighting-controller",
+      "cctv-controller",
+      "server-controller"
+    ],
+    "filtered_agents": ["cctv-controller"],
+    "executed_agents": [
+      "hvac-controller",
+      "lighting-controller",
+      "server-controller"
+    ]
+  }
+}
+```
+
+## Execution Trace
+
+```json
+{
+  "execution_id": "exec-maint-2024-001",
+  "events": [
+    {
+      "seq": 1,
+      "type": "INTENT_RECEIVED",
+      "payload": {"intent": "PowerOffIntent", "target_count": 4}
+    },
+    {
+      "seq": 2,
+      "type": "POLICY_EVALUATION",
+      "payload": {
+        "total_targets": 4,
+        "allowed": 3,
+        "filtered": 1,
+        "filtered_details": {
+          "cctv-controller": {
+            "rule": "protect-cctv",
+            "reason": "security_critical"
+          }
+        }
+      }
+    },
+    {
+      "seq": 3,
+      "type": "AGENT_ATTEMPT_START",
+      "payload": {"agent": "hvac-controller"}
+    },
+    {
+      "seq": 4,
+      "type": "AGENT_ATTEMPT_END",
+      "payload": {"agent": "hvac-controller", "status": "success"}
+    },
+    {
+      "seq": 5,
+      "type": "AGENT_ATTEMPT_START",
+      "payload": {"agent": "lighting-controller"}
+    },
+    {
+      "seq": 6,
+      "type": "AGENT_ATTEMPT_END",
+      "payload": {"agent": "lighting-controller", "status": "success"}
+    },
+    {
+      "seq": 7,
+      "type": "AGENT_ATTEMPT_START",
+      "payload": {"agent": "server-controller"}
+    },
+    {
+      "seq": 8,
+      "type": "AGENT_ATTEMPT_END",
+      "payload": {"agent": "server-controller", "status": "success"}
+    },
+    {
+      "seq": 9,
+      "type": "FINAL_RESPONSE",
+      "payload": {"status": "success", "partial": true}
+    }
+  ]
+}
+```
+
+## Final Response
+
+```json
+{
+  "status": "success",
+  "payload": {
+    "executed": [
+      {
+        "agent": "hvac-controller",
+        "result": {"system": "HVAC", "status": "powered_off"}
+      },
+      {
+        "agent": "lighting-controller",
+        "result": {"system": "Lighting", "status": "powered_off"}
+      },
+      {
+        "agent": "server-controller",
+        "result": {"system": "Servers", "status": "powered_off"}
+      }
+    ],
+    "filtered": [
+      {
+        "agent": "cctv-controller",
+        "reason": "Denied by policy: protect-cctv",
+        "status": "not_executed"
+      }
+    ]
+  },
+  "metadata": {
+    "execution_id": "exec-maint-2024-001",
+    "partial_execution": true,
+    "executed_count": 3,
+    "filtered_count": 1
+  }
+}
+```
+
+## Verification
+
+```bash
+# Verify CCTV is still powered
+$ intentusnet inspect exec-maint-2024-001 --format text
+
+Execution: exec-maint-2024-001
+Status:    success (partial)
+Filtered:  cctv-controller (protect-cctv)
+Executed:  hvac-controller, lighting-controller, server-controller
+
+CCTV Status: POWERED ON (protected by policy)
+```
+
+## Replay Note
+
+```bash
+$ intentusnet replay exec-maint-2024-001
+
+{
+  "from_replay": true,
+  "original_execution_id": "exec-maint-2024-001",
+  "payload": {
+    "executed": [...],
+    "filtered": [{"agent": "cctv-controller", ...}]
+  }
+}
+```
+
+The replay returns exactly what happened:
+- 3 systems were powered off
+- CCTV was filtered (never touched)
+- This is auditable proof of what occurred
+
+## Key Points
+
+| Aspect | Behavior |
+|--------|----------|
+| Policy | CCTV filtered before execution |
+| Other targets | Proceeded normally |
+| Response | Includes both executed and filtered |
+| Audit | Full trace of policy decision |
+| Replay | Exact reproduction of outcome |
+
+## Code Example
+
+```python
+from intentusnet import IntentusRuntime
+from intentusnet.security import PolicyEngine, PolicyRule, PolicyAction
+
+# Create policy
+policies = PolicyEngine([
+    PolicyRule(
+        id="protect-cctv",
+        action=PolicyAction.DENY,
+        intents=["PowerOffIntent"],
+        agents=["cctv-controller"],
+        roles=["*"],
+        tenants=["*"]
+    ),
+    PolicyRule(
+        id="default-allow",
+        action=PolicyAction.ALLOW,
+        intents=["*"],
+        agents=["*"],
+        roles=["*"],
+        tenants=["*"]
+    ),
+])
+
+# Create runtime
+runtime = IntentusRuntime(
+    enable_recording=True,
+    policy_engine=policies
+)
+
+# Execute with policy filtering
+response = runtime.router.route_intent(envelope)
+
+# CCTV is never powered off!
+assert "cctv-controller" in response.payload["filtered"]
+```
+
+## See Also
+
+- [Policy Filtering](../guarantees/policy-filtering) — Guarantee details
+- [Policy Design](../advanced/policy-design) — Advanced patterns

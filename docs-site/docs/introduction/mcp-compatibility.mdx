@@ -1,0 +1,216 @@
+---
+sidebar_position: 3
+title: MCP Compatibility
+description: How IntentusNet relates to and integrates with the Model Context Protocol
+---
+
+# MCP Compatibility
+
+IntentusNet is designed to be **compatible with, not a replacement for**, the Model Context Protocol (MCP). This document clarifies the relationship between these complementary technologies.
+
+## Understanding the Layers
+
+MCP and IntentusNet operate at different layers of the stack:
+
+```
+┌─────────────────────────────────────────┐
+│           Application Layer             │
+│        (Your agent orchestration)       │
+├─────────────────────────────────────────┤
+│       MCP (Model Context Protocol)      │  ← Protocol: How to communicate
+│        - Tool definitions               │
+│        - Context passing                │
+│        - Message format                 │
+├─────────────────────────────────────────┤
+│           IntentusNet Runtime           │  ← Runtime: Execution semantics
+│        - Deterministic routing          │
+│        - Execution recording            │
+│        - Crash recovery                 │
+│        - Replay                         │
+├─────────────────────────────────────────┤
+│          Transport Layer                │
+│     (HTTP, WebSocket, ZeroMQ, etc.)     │
+└─────────────────────────────────────────┘
+```
+
+## What MCP Provides
+
+The Model Context Protocol standardizes:
+
+- **Tool definitions** — How to describe available tools/functions to models
+- **Context passing** — How to send relevant context with requests
+- **Message formats** — Standard wire format for model interactions
+- **Capability discovery** — How clients discover server capabilities
+
+MCP answers: **"How do I talk to AI tools?"**
+
+## What IntentusNet Provides
+
+IntentusNet standardizes:
+
+- **Routing semantics** — Which agent handles which intent, deterministically
+- **Execution recording** — Capturing every execution for audit and replay
+- **Failure handling** — Explicit error codes, fallback behavior, crash recovery
+- **Policy enforcement** — Allow/deny rules with partial continuation
+
+IntentusNet answers: **"How do I ensure reliable, debuggable execution?"**
+
+## They're Complementary, Not Competing
+
+| Concern | MCP | IntentusNet |
+|---------|-----|-------------|
+| Message format | Defines it | Agnostic (uses own `IntentEnvelope`) |
+| Tool discovery | Provides it | Uses agent registry |
+| Execution guarantees | Not specified | Core focus |
+| Replay capability | Not specified | Built-in |
+| Crash recovery | Not specified | WAL-backed |
+| Audit trails | Not specified | Every execution recorded |
+
+## Integration Architecture
+
+IntentusNet includes an `MCPAdapter` that bridges MCP tool calls to IntentusNet intents:
+
+```python
+from intentusnet import IntentusClient
+from intentusnet.transport.mcp import MCPAdapter
+
+# Create IntentusNet client
+client = IntentusClient(transport)
+
+# Create MCP adapter
+adapter = MCPAdapter(client)
+
+# Handle incoming MCP request
+def handle_mcp_request(mcp_request):
+    # Adapter converts MCP tool call to IntentusNet intent
+    response = adapter.handle_mcp_request(mcp_request)
+    return response
+```
+
+### What the Adapter Does
+
+1. **Receives MCP tool call** with tool name and parameters
+2. **Converts to IntentEnvelope** with:
+   - Tool name → Intent name
+   - Tool parameters → Payload
+   - MCP context → IntentContext
+3. **Routes through IntentusNet** with all guarantees (recording, determinism, etc.)
+4. **Converts response** back to MCP format
+
+### What the Adapter Does NOT Do
+
+- Replace MCP protocol handling (use the MCP SDK for that)
+- Modify MCP message formats
+- Implement MCP server features
+
+## Typical Integration Pattern
+
+```
+┌────────────────────────────┐
+│       MCP Client           │
+│   (Claude, other LLMs)     │
+└─────────────┬──────────────┘
+              │ MCP Protocol
+              ▼
+┌────────────────────────────┐
+│       MCP Server           │
+│    (Your application)      │
+├────────────────────────────┤
+│       MCPAdapter           │
+│  (IntentusNet integration) │
+└─────────────┬──────────────┘
+              │ IntentEnvelope
+              ▼
+┌────────────────────────────┐
+│    IntentusNet Runtime     │
+│  - Deterministic routing   │
+│  - Execution recording     │
+│  - Policy enforcement      │
+└─────────────┬──────────────┘
+              │
+              ▼
+┌────────────────────────────┐
+│     Your Agents/Tools      │
+└────────────────────────────┘
+```
+
+## When You Need Both
+
+Use MCP + IntentusNet when:
+
+- You're building MCP-compatible tools that need production-grade execution
+- You want to expose IntentusNet agents to MCP clients (like Claude)
+- You need the standardization of MCP with the reliability of IntentusNet
+
+## When You Need Only IntentusNet
+
+Use IntentusNet alone when:
+
+- You have your own agent communication protocol
+- You don't need MCP client compatibility
+- You're building internal systems without external model integration
+
+## When You Need Only MCP
+
+Use MCP alone when:
+
+- You're prototyping and don't need execution guarantees yet
+- Your tools are stateless and don't need crash recovery
+- You don't need execution replay or audit trails
+
+## Example: MCP Tool with IntentusNet Guarantees
+
+```python
+from mcp import Server
+from intentusnet import IntentusRuntime, IntentusClient
+from intentusnet.transport import InProcessTransport
+from intentusnet.transport.mcp import MCPAdapter
+
+# Set up IntentusNet
+runtime = IntentusRuntime(enable_recording=True)
+# ... register agents ...
+
+# Create MCP adapter
+transport = InProcessTransport(runtime.router)
+client = IntentusClient(transport)
+adapter = MCPAdapter(client)
+
+# MCP server handler
+server = Server()
+
+@server.tool("search_documents")
+async def search_documents(query: str, limit: int = 10):
+    # Convert to MCP request format
+    mcp_request = {
+        "tool": "search_documents",
+        "parameters": {"query": query, "limit": limit}
+    }
+
+    # Route through IntentusNet (gets recording, determinism, etc.)
+    result = adapter.handle_mcp_request(mcp_request)
+
+    # IntentusNet guarantees:
+    # - Deterministic agent selection
+    # - Execution recorded with execution_id
+    # - Replayable if needed
+    # - Policy filtering applied
+
+    return result
+```
+
+## Protocol vs. Runtime: A Summary
+
+| Aspect | Protocol (MCP) | Runtime (IntentusNet) |
+|--------|---------------|-----------------------|
+| Focus | Communication standards | Execution guarantees |
+| Scope | Wire format, discovery | Routing, recording, recovery |
+| State | Stateless protocol | Stateful execution tracking |
+| Failure handling | Error responses | Structured errors, fallback, recovery |
+| Audit | Not specified | Every execution recorded |
+| Replay | Not applicable | Return recorded outputs |
+
+## Next Steps
+
+- [Integration Patterns](../mcp/integration-patterns) — Detailed MCP integration patterns
+- [Protocol vs. Runtime](../mcp/protocol-vs-runtime) — Deeper dive on the distinction
+- [Getting Started](../getting-started/install) — Install IntentusNet

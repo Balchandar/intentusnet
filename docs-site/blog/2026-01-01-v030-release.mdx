@@ -1,0 +1,126 @@
+---
+slug: v030-release
+title: 'IntentusNet v1.3.0 Released'
+authors: [balachandar]
+tags: [release]
+---
+
+We're excited to announce IntentusNet v1.3.0, bringing execution recording, deterministic replay, and improved stability to the runtime.
+
+<!-- truncate -->
+
+## What's New
+
+### Execution Recording & Replay
+
+The headline feature of v1.3.0 is the execution recording and replay system:
+
+```python
+# Enable recording
+runtime = IntentusRuntime(enable_recording=True)
+
+# Execute
+response = runtime.router.route_intent(envelope)
+execution_id = response.metadata["execution_id"]
+
+# Later: replay returns exact same output
+engine = ReplayEngine(store.load(execution_id))
+result = engine.replay()  # No model calls, exact output
+```
+
+Every execution is now captured with:
+
+- Stable envelope hash for integrity
+- Step-by-step event trace
+- Complete final response
+- Replayability status
+
+### Determinism Hardening
+
+We've strengthened determinism guarantees:
+
+- Agent ordering now uses explicit `nodePriority` field
+- Sequence numbers replace timestamps for event ordering
+- Canonical JSON ensures consistent hashing
+
+### Public API Cleanup
+
+The public API has been refined:
+
+- Clear separation between public and internal modules
+- Type hints throughout
+- Comprehensive docstrings
+- Stable export list in `__init__.py`
+
+### New `replayableReason` Field
+
+When a record can't be replayed, the reason is now explicit:
+
+```json
+{
+  "header": {
+    "replayable": false,
+    "replayableReason": "execution_incomplete"
+  }
+}
+```
+
+## Breaking Changes
+
+### Removed
+
+- `IntentRouter.route()` - use `route_intent()` instead
+- Legacy envelope format v1.x
+
+### Changed
+
+- `AgentDefinition.priority` renamed to `nodePriority` for clarity
+- Event timestamps are now supplementary; sequence numbers are authoritative
+
+## Upgrade Guide
+
+1. Update imports:
+
+   ```python
+   # Old
+   from intentusnet.router import IntentRouter
+
+   # New
+   from intentusnet import IntentRouter
+   ```
+
+2. Update agent definitions:
+
+   ```python
+   # Old
+   AgentDefinition(priority=10, ...)
+
+   # New
+   AgentDefinition(nodePriority=10, ...)
+   ```
+
+3. Enable recording for replay:
+   ```python
+   runtime = IntentusRuntime(enable_recording=True)
+   ```
+
+## What's Next
+
+For v1.4.0, we're planning:
+
+- Async routing support
+- Built-in timeout handling
+- WAL-backed persistence
+- Additional execution stores
+
+## Get It
+
+```bash
+pip install intentusnet==1.3.0
+```
+
+Full changelog on [GitHub](https://github.com/Balchandar/intentusnet/releases/tag/v1.3.0).
+
+---
+
+Thanks to everyone who contributed feedback and testing for this release!

@@ -1,0 +1,265 @@
+---
+sidebar_position: 3
+title: "Demo: Crash Recovery"
+description: Mid-execution crash recovery with deterministic resume
+---
+
+# Demo: Crash Recovery
+
+This demo shows how IntentusNet handles crashes during multi-step execution, enabling safe recovery and resume.
+
+## Scenario
+
+A data processing pipeline is executing across three agents. A power failure occurs mid-execution. The system must recover and resume without duplicating work or losing state.
+
+## Input Intent
+
+```json
+{
+  "intent": {
+    "name": "ProcessPipelineIntent",
+    "version": "1.0"
+  },
+  "payload": {
+    "pipeline": "daily-etl",
+    "steps": ["extract", "transform", "load"]
+  },
+  "routing": {
+    "strategy": "BROADCAST"
+  }
+}
+```
+
+## Initial Execution
+
+```
+Timeline:
+─────────────────────────────────────────────────────────────
+
+t0: Intent received
+    └─ Event: INTENT_RECEIVED recorded
+
+t1: Extract agent starts
+    └─ Event: AGENT_ATTEMPT_START (extract-agent) recorded
+
+t2: Extract agent completes
+    └─ Event: AGENT_ATTEMPT_END (extract-agent, success) recorded
+    └─ Data: 1M records extracted
+
+t3: Transform agent starts
+    └─ Event: AGENT_ATTEMPT_START (transform-agent) recorded
+
+t4: ⚡ POWER FAILURE ⚡
+    └─ System crashes mid-transform
+    └─ No AGENT_ATTEMPT_END recorded
+
+─────────────────────────────────────────────────────────────
+```
+
+## Execution Record at Crash
+
+```json
+{
+  "header": {
+    "executionId": "exec-pipeline-2024-001",
+    "createdUtcIso": "2024-01-15T10:30:00Z",
+    "envelopeHash": "sha256:a1b2c3d4...",
+    "replayable": false,
+    "replayableReason": "execution_incomplete"
+  },
+  "events": [
+    {"seq": 1, "type": "INTENT_RECEIVED", "payload": {...}},
+    {"seq": 2, "type": "AGENT_ATTEMPT_START", "payload": {"agent": "extract-agent"}},
+    {"seq": 3, "type": "AGENT_ATTEMPT_END", "payload": {"agent": "extract-agent", "status": "success"}},
+    {"seq": 4, "type": "AGENT_ATTEMPT_START", "payload": {"agent": "transform-agent"}}
+  ],
+  "finalResponse": null
+}
+```
+
+## Recovery Analysis
+
+```bash
+$ intentusnet inspect exec-pipeline-2024-001
+
+{
+  "execution_id": "exec-pipeline-2024-001",
+  "status": "incomplete",
+  "replayable": false,
+  "replayable_reason": "execution_incomplete",
+  "crash_analysis": {
+    "last_event": {
+      "seq": 4,
+      "type": "AGENT_ATTEMPT_START",
+      "agent": "transform-agent"
+    },
+    "completed_agents": ["extract-agent"],
+    "in_progress_agent": "transform-agent",
+    "not_started_agents": ["load-agent"],
+    "recommendation": "Check transform-agent idempotency before retry"
+  }
+}
+```
+
+## Recovery Decision
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    Recovery Analysis                         │
+├─────────────────────────────────────────────────────────────┤
+│                                                              │
+│  Agent           │ Status      │ Action Required             │
+│ ─────────────────┼─────────────┼───────────────────────────  │
+│  extract-agent   │ ✓ Completed │ Skip (already done)         │
+│  transform-agent │ ? Unknown   │ Check state, decide         │
+│  load-agent      │ ○ Not run   │ Will run after transform    │
+│                                                              │
+│  Options:                                                    │
+│  1. Resume from transform-agent (if idempotent)              │
+│  2. Rollback extract, restart entirely                       │
+│  3. Manual inspection of transform state                     │
+│                                                              │
+└─────────────────────────────────────────────────────────────┘
+```
+
+## Resume Execution
+
+If transform-agent is idempotent:
+
+```python
+# Load crash state
+store = FileExecutionStore(".intentusnet/records")
+crashed_record = store.load("exec-pipeline-2024-001")
+
+# Identify completed work
+completed = [e for e in crashed_record.events
+             if e.type == "AGENT_ATTEMPT_END" and e.payload.get("status") == "success"]
+
+# Resume from crashed point
+resume_from = ["transform-agent", "load-agent"]
+
+# Create resume intent
+resume_envelope = IntentEnvelope(
+    intent=IntentRef(name="ProcessPipelineIntent"),
+    payload={
+        "pipeline": "daily-etl",
+        "steps": ["transform", "load"],  # Skip completed
+        "resume_from": "exec-pipeline-2024-001"
+    },
+    # ...
+)
+
+response = runtime.router.route_intent(resume_envelope)
+```
+
+## Resume Execution Trace
+
+```json
+{
+  "execution_id": "exec-pipeline-2024-002",
+  "metadata": {
+    "resume_from": "exec-pipeline-2024-001",
+    "skipped_agents": ["extract-agent"]
+  },
+  "events": [
+    {"seq": 1, "type": "INTENT_RECEIVED", "payload": {"resumed": true}},
+    {"seq": 2, "type": "AGENT_ATTEMPT_START", "payload": {"agent": "transform-agent"}},
+    {"seq": 3, "type": "AGENT_ATTEMPT_END", "payload": {"agent": "transform-agent", "status": "success"}},
+    {"seq": 4, "type": "AGENT_ATTEMPT_START", "payload": {"agent": "load-agent"}},
+    {"seq": 5, "type": "AGENT_ATTEMPT_END", "payload": {"agent": "load-agent", "status": "success"}},
+    {"seq": 6, "type": "FINAL_RESPONSE", "payload": {"status": "success"}}
+  ]
+}
+```
+
+## Final State
+
+```
+Pipeline Execution Summary:
+───────────────────────────────────────────────────────────────
+
+Original Execution: exec-pipeline-2024-001
+  ├─ extract-agent:    ✓ Completed
+  ├─ transform-agent:  ✗ Crashed during
+  └─ load-agent:       ○ Not started
+
+Resume Execution: exec-pipeline-2024-002
+  ├─ extract-agent:    ⊘ Skipped (completed in original)
+  ├─ transform-agent:  ✓ Completed (retry succeeded)
+  └─ load-agent:       ✓ Completed
+
+Combined Result:
+  All 3 pipeline steps completed successfully.
+  No duplicate processing of extract step.
+```
+
+## Replay Note
+
+After successful resume, both executions are replayable:
+
+```bash
+# Original (incomplete)
+$ intentusnet replay exec-pipeline-2024-001 --force
+{
+  "warning": "Forced replay of incomplete record",
+  "last_complete_step": "extract-agent",
+  "incomplete": true
+}
+
+# Resume (complete)
+$ intentusnet replay exec-pipeline-2024-002
+{
+  "from_replay": true,
+  "payload": {
+    "pipeline": "daily-etl",
+    "status": "completed",
+    "steps_completed": ["transform", "load"]
+  }
+}
+```
+
+## Key Points
+
+| Aspect | Behavior |
+|--------|----------|
+| Crash detection | Record marked incomplete |
+| State preservation | Events up to crash saved |
+| Recovery analysis | Identifies crash point |
+| Resume | Skip completed, retry from crash |
+| Audit trail | Both executions recorded |
+
+## Code Example
+
+```python
+from intentusnet import IntentusRuntime, FileExecutionStore
+
+def recover_from_crash(execution_id: str):
+    store = FileExecutionStore(".intentusnet/records")
+    record = store.load(execution_id)
+
+    # Analyze crash point
+    completed_agents = []
+    crashed_agent = None
+
+    for event in record.events:
+        if event.type == "AGENT_ATTEMPT_END":
+            if event.payload.get("status") == "success":
+                completed_agents.append(event.payload["agent"])
+        elif event.type == "AGENT_ATTEMPT_START":
+            # If no corresponding END, this is where we crashed
+            crashed_agent = event.payload["agent"]
+
+    print(f"Completed: {completed_agents}")
+    print(f"Crashed during: {crashed_agent}")
+
+    # Decide: retry or rollback
+    if is_idempotent(crashed_agent):
+        return resume_from(crashed_agent)
+    else:
+        return rollback_and_retry()
+```
+
+## See Also
+
+- [Crash-Safe Execution](../guarantees/crash-safe-execution) — Guarantee details
+- [Crash Safety Internals](../advanced/crash-safety-internals) — Technical deep dive

@@ -1,0 +1,148 @@
+---
+slug: execution-recording-deep-dive
+title: 'Deep Dive: How IntentusNet Records Executions'
+authors: [balachandar]
+tags: [technical, architecture]
+---
+
+IntentusNet's execution recording system is the foundation for replay, debugging, and audit capabilities. In this post, we explore how it works under the hood.
+
+<!-- truncate -->
+
+## The Recording Model
+
+Every execution in IntentusNet produces an `ExecutionRecord`:
+
+```python
+@dataclass
+class ExecutionRecord:
+    header: ExecutionHeader    # ID, hash, timestamp, replayability
+    envelope: Dict             # Original request
+    routerDecision: Dict       # Which agent was selected
+    events: List[ExecutionEvent]  # Step-by-step trace
+    finalResponse: Dict        # What was returned
+```
+
+This captures the complete execution lifecycle, from request to response.
+
+## Stable Hashing
+
+A key design decision was **content-addressed records**. Each execution's envelope is hashed using SHA-256 with canonical JSON:
+
+```python
+def compute_hash(envelope: dict) -> str:
+    canonical = json.dumps(
+        envelope,
+        sort_keys=True,
+        separators=(',', ':'),
+        ensure_ascii=True
+    )
+    return f"sha256:{hashlib.sha256(canonical.encode()).hexdigest()}"
+```
+
+This provides:
+
+- **Integrity verification**: Detect tampering
+- **Content addressing**: Find duplicates
+- **Replay validation**: Verify request matches
+
+## Sequence Numbers, Not Wall-Clock
+
+Events use sequence numbers rather than wall-clock timestamps:
+
+```python
+class DeterministicClock:
+    def __init__(self):
+        self._seq = 0
+
+    def next(self) -> int:
+        self._seq += 1
+        return self._seq
+```
+
+Why? Wall-clock time can:
+
+- Drift between nodes
+- Go backwards (NTP adjustments)
+- Create ordering ambiguity
+
+Sequence numbers provide **total ordering** that's consistent across replays.
+
+## Flush Boundaries
+
+Events are flushed at specific boundaries:
+
+```
+INTENT_RECEIVED      → Flush
+AGENT_ATTEMPT_START  → Flush
+AGENT_ATTEMPT_END    → Flush
+FINAL_RESPONSE       → Flush + Persist
+```
+
+This ensures:
+
+- Crash recovery has fine-grained checkpoints
+- At most one event lost on crash
+- Clear "last known state" for debugging
+
+## Atomic Persistence
+
+Records are written atomically:
+
+```python
+def save(self, record: ExecutionRecord) -> str:
+    temp_path = path.with_suffix('.tmp')
+
+    # Write to temp file
+    with open(temp_path, 'w') as f:
+        json.dump(record.to_dict(), f)
+
+    # Atomic rename (POSIX guarantee)
+    temp_path.rename(path)
+```
+
+The rename operation is atomic on POSIX systems—the record either fully exists or doesn't.
+
+## Replay Semantics
+
+Replay is simple because of this design:
+
+```python
+def replay(self) -> ReplayResult:
+    # No agent code executed
+    # No model API called
+    # Just return what was recorded
+    return ReplayResult(
+        payload=self.record.finalResponse["payload"],
+        fromReplay=True
+    )
+```
+
+The record contains everything needed to reproduce the output without re-execution.
+
+## Trade-offs
+
+This design has trade-offs:
+
+| Benefit              | Cost                                |
+| -------------------- | ----------------------------------- |
+| Complete audit trail | Storage overhead                    |
+| Exact replay         | ~1-5ms latency per execution        |
+| Crash recovery       | Complexity                          |
+| Debugging support    | Large record files for big payloads |
+
+For most production workloads, the benefits far outweigh the costs. For high-frequency, low-latency scenarios, consider sampling.
+
+## Future Directions
+
+We're exploring:
+
+- **WAL-backed recording**: Write-ahead log for even stronger durability
+- **Compressed storage**: Reduce storage footprint
+- **Streaming replay**: Replay long-running executions progressively
+
+---
+
+The execution recording system is central to IntentusNet's guarantees. By capturing everything deterministically, we enable debugging, auditing, and replay that would otherwise be impossible with non-deterministic AI systems.
+
+Questions or feedback? [Open an issue](https://github.com/Balchandar/intentusnet/issues).

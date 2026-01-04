@@ -1,0 +1,60 @@
+---
+sidebar_position: 1
+title: Demos Overview
+description: Interactive demonstrations of IntentusNet capabilities
+---
+
+# Demos Overview
+
+These demos illustrate IntentusNet's core capabilities with realistic scenarios. Each demo includes input, routing decision, policy evaluation, execution trace, and replay verification.
+
+## Available Demos
+
+| Demo | Capability Demonstrated |
+|------|------------------------|
+| [Dangerous Target Filtering](./dangerous-target-filtering) | Policy filtering protects CCTV while allowing other systems |
+| [Crash Recovery](./crash-recovery) | Mid-execution crash recovery with deterministic resume |
+| [Model Swap Prevention](./model-swap-prevention) | Deterministic routing prevents behavioral drift |
+
+## Demo Format
+
+Each demo follows a consistent format:
+
+1. **Scenario**: Real-world situation
+2. **Input Intent**: The request being made
+3. **Route Result**: Which agent(s) were selected
+4. **Policy Decision**: What was allowed/denied
+5. **Execution Trace**: Step-by-step events
+6. **Replay Note**: How replay applies
+
+## Running the Demos
+
+All demos are runnable Python scripts:
+
+```bash
+# Install IntentusNet
+pip install intentusnet
+
+# Clone examples
+git clone https://github.com/Balchandar/intentusnet
+cd intentusnet/examples/demos
+
+# Run a demo
+python dangerous_target_filtering.py
+python crash_recovery.py
+python model_swap_prevention.py
+```
+
+## Key Takeaways
+
+After running these demos, you'll understand:
+
+- **Policy filtering** protects critical systems without blocking entire intents
+- **Crash recovery** identifies failure points and enables safe resume
+- **Deterministic routing** ensures consistent agent selection regardless of external changes
+- **Replay** returns exact recorded outputs for debugging and auditing
+
+## Next Steps
+
+- [Dangerous Target Filtering](./dangerous-target-filtering) — First demo
+- [Complete Walkthrough](../getting-started/walkthrough) — End-to-end tutorial

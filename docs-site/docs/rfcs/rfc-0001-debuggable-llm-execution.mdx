@@ -1,0 +1,231 @@
+---
+sidebar_position: 2
+title: 'RFC-0001: Debuggable LLM Execution'
+description: Foundation for deterministic, replayable LLM execution
+---
+
+# RFC-0001: Debuggable LLM Execution
+
+## Status
+
+**IMPLEMENTED** in v1.3.0
+
+## Summary
+
+This RFC establishes the foundational architecture for making LLM-based agent execution debuggable, replayable, and deterministic. It defines the core guarantees, execution model, and recording semantics that form the basis of IntentusNet.
+
+## Motivation
+
+### The Problem
+
+Multi-agent LLM systems are fundamentally non-deterministic:
+
+1. **Model outputs vary** — Same prompt can produce different outputs
+2. **Routing decisions are opaque** — Which agent handles what is unclear
+3. **Failures are silent** — Errors disappear without trace
+4. **Debugging is impossible** — Cannot reproduce issues
+5. **Compliance is hard** — No audit trail of decisions
+
+### Current State of the Art
+
+Existing approaches fall short:
+
+| Approach                | Limitation                  |
+| ----------------------- | --------------------------- |
+| Logging                 | Unstructured, incomplete    |
+| Tracing (OpenTelemetry) | Observation only, no replay |
+| Checkpointing           | Application-specific        |
+| Idempotency keys        | Doesn't capture output      |
+
+### Requirements
+
+A solution must provide:
+
+1. **Deterministic routing** — Same input → same agent selection
+2. **Execution recording** — Every execution captured
+3. **Replay without re-execution** — Return recorded output
+4. **Structured observability** — Machine-readable output
+5. **Minimal overhead** — Production-viable performance
+
+## Design
+
+### Core Abstraction: IntentEnvelope
+
+All execution flows through a canonical envelope:
+
+```python
+@dataclass
+class IntentEnvelope:
+    version: str              # Protocol version
+    intent: IntentRef         # What to do
+    payload: Dict[str, Any]   # Input data
+    context: IntentContext    # Execution context
+    metadata: IntentMetadata  # Tracking info
+    routing: RoutingOptions   # How to route
+```
+
+**Rationale:** A single, well-defined structure enables consistent recording, routing, and replay.
+
+### Deterministic Routing
+
+Agent selection uses a deterministic ordering:
+
+```python
+order = sorted(agents, key=lambda a: (
+    0 if a.nodeId is None else 1,  # Local first
+    a.nodePriority,                 # Lower = higher priority
+    a.name                          # Alphabetical tiebreaker
+))
+```
+
+**Rationale:** No randomness, no external state. Same agents → same order.
+
+### Execution Recording
+
+Every execution produces an immutable record:
+
+```python
+@dataclass
+class ExecutionRecord:
+    header: ExecutionHeader    # ID, hash, timestamp
+    envelope: dict             # Input
+    routerDecision: dict       # Routing decision
+    events: List[ExecutionEvent]  # Step-by-step trace
+    finalResponse: dict        # Output
+```
+
+**Rationale:** Complete capture enables debugging and replay.
+
+### Stable Hashing
+
+Envelope identity via canonical hash:
+
+```python
+def compute_hash(envelope: dict) -> str:
+    canonical = json.dumps(envelope, sort_keys=True, separators=(',', ':'))
+    return f"sha256:{hashlib.sha256(canonical.encode()).hexdigest()}"
+```
+
+**Rationale:** Detect envelope tampering, enable content-addressed lookup.
+
+### Replay Semantics
+
+Replay returns recorded output without re-execution:
+
+```python
+class ReplayEngine:
+    def replay(self) -> ReplayResult:
+        # NO agent code executed
+        # NO model API called
+        # Returns exactly what was recorded
+        return ReplayResult(
+            payload=self.record.finalResponse["payload"],
+            fromReplay=True
+        )
+```
+
+**Rationale:** Deterministic reproduction for debugging, testing, auditing.
+
+### Event Types
+
+Discrete event types for execution trace:
+
+| Event                 | Recorded When             |
+| --------------------- | ------------------------- |
+| `INTENT_RECEIVED`     | Request arrives           |
+| `AGENT_ATTEMPT_START` | Before agent execution    |
+| `AGENT_ATTEMPT_END`   | After agent execution     |
+| `FALLBACK_TRIGGERED`  | On fallback to next agent |
+| `ROUTER_DECISION`     | Final selection made      |
+| `FINAL_RESPONSE`      | Response ready            |
+
+**Rationale:** Fine-grained tracing for debugging crash recovery.
+
+### Sequence Numbering
+
+Events use sequence numbers, not wall-clock:
+
+```python
+class DeterministicClock:
+    def next(self) -> int:
+        self._seq += 1
+        return self._seq
+```
+
+**Rationale:** Total ordering without clock skew issues.
+
+## Alternatives Considered
+
+### Alternative 1: OpenTelemetry Only
+
+**Rejected:** OTel is observation-focused, not replay-focused. No built-in recording or replay semantics.
+
+### Alternative 2: Event Sourcing Framework
+
+**Rejected:** Heavy-weight for our use case. We need a minimal, focused solution.
+
+### Alternative 3: Application-Level Checkpointing
+
+**Rejected:** Requires each agent to implement checkpointing. We want runtime-level guarantees.
+
+### Alternative 4: Model-Level Caching
+
+**Rejected:** Doesn't address routing determinism or crash recovery.
+
+## Implications
+
+### Backward Compatibility
+
+This RFC establishes the baseline. Future changes must maintain:
+
+- `IntentEnvelope` structure
+- `ExecutionRecord` format
+- Routing algorithm
+- Hash computation
+
+### Performance
+
+| Operation        | Overhead      |
+| ---------------- | ------------- |
+| Envelope hashing | ~0.1ms        |
+| Event recording  | ~0.05ms/event |
+| File persistence | ~1-5ms        |
+
+For typical 5-event execution: ~1.5ms total overhead.
+
+### Migration
+
+For existing systems:
+
+1. Wrap existing handlers as `BaseAgent`
+2. Register with `AgentRegistry`
+3. Route via `IntentRouter`
+4. Enable recording
+
+## Open Questions (Resolved)
+
+### Q1: Should replay validate envelope hash?
+
+**Resolution:** Optional. Hash validation available but not required for basic replay.
+
+### Q2: How to handle partial executions?
+
+**Resolution:** Mark as `replayable: false` with reason. Require manual decision for recovery.
+
+### Q3: Should events include wall-clock time?
+
+**Resolution:** Yes, for debugging. But ordering uses sequence numbers only.
+
+## References
+
+- [IntentusNet README](https://github.com/Balchandar/intentusnet)
+- [Event Sourcing (Martin Fowler)](https://martinfowler.com/eaaDev/EventSourcing.html)
+- [OpenTelemetry](https://opentelemetry.io/)
+
+## Changelog
+
+| Date       | Change                |
+| ---------- | --------------------- |
+| 2024-01-15 | RFC created           |
+| 2024-02-01 | Accepted              |
+| 2024-03-01 | Implemented in v1.3.0 |

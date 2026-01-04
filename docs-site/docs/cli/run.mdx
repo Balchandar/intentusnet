@@ -1,0 +1,283 @@
+---
+sidebar_position: 2
+title: intentusnet run
+description: Execute an intent via the CLI
+---
+
+# intentusnet run
+
+Execute an intent and return the result.
+
+## Synopsis
+
+```bash
+intentusnet run [options]
+```
+
+## Options
+
+| Option | Description | Required |
+|--------|-------------|----------|
+| `--intent NAME` | Intent name to execute | Yes |
+| `--payload JSON` | JSON payload (inline or @file) | No |
+| `--priority LEVEL` | Priority: low, normal, high | No |
+| `--strategy STRATEGY` | Routing: direct, fallback, broadcast, parallel | No |
+| `--target AGENT` | Target specific agent | No |
+| `--tags TAG,...` | Comma-separated tags | No |
+| `--timeout MS` | Timeout in milliseconds | No |
+| `--trace-id ID` | Custom trace ID | No |
+| `--dry-run` | Validate without executing | No |
+
+## Examples
+
+### Basic Execution
+
+```bash
+intentusnet run --intent ProcessIntent --payload '{"data": "hello"}'
+```
+
+Output:
+
+```json
+{
+  "execution_id": "exec-a1b2c3d4",
+  "status": "success",
+  "agent": "processor-a",
+  "latency_ms": 127,
+  "payload": {
+    "result": "processed"
+  }
+}
+```
+
+### Payload from File
+
+```bash
+intentusnet run --intent ProcessIntent --payload @request.json
+```
+
+Where `request.json`:
+
+```json
+{
+  "document_id": "doc-123",
+  "operation": "summarize"
+}
+```
+
+### With Priority
+
+```bash
+intentusnet run --intent CriticalIntent --payload '{}' --priority high
+```
+
+### Fallback Strategy
+
+```bash
+intentusnet run --intent ProcessIntent --payload '{}' --strategy fallback
+```
+
+Output showing fallback:
+
+```json
+{
+  "execution_id": "exec-e5f6g7h8",
+  "status": "success",
+  "agent": "processor-b",
+  "latency_ms": 250,
+  "routing": {
+    "strategy": "FALLBACK",
+    "attempts": [
+      {"agent": "processor-a", "status": "error", "latency_ms": 50},
+      {"agent": "processor-b", "status": "success", "latency_ms": 200}
+    ]
+  },
+  "payload": {...}
+}
+```
+
+### Target Specific Agent
+
+```bash
+intentusnet run --intent ProcessIntent --payload '{}' --target processor-b
+```
+
+### With Tags
+
+```bash
+intentusnet run --intent ProcessIntent --payload '{}' --tags "batch,nightly,v2"
+```
+
+### Custom Trace ID
+
+```bash
+intentusnet run --intent ProcessIntent --payload '{}' --trace-id "trace-custom-123"
+```
+
+### Dry Run
+
+Validate without executing:
+
+```bash
+intentusnet run --intent ProcessIntent --payload '{}' --dry-run
+```
+
+Output:
+
+```json
+{
+  "valid": true,
+  "would_route_to": "processor-a",
+  "policy_evaluation": {
+    "action": "ALLOW",
+    "matched_rule": "default-allow"
+  },
+  "dry_run": true
+}
+```
+
+### With Timeout
+
+```bash
+intentusnet run --intent SlowIntent --payload '{}' --timeout 60000
+```
+
+## Error Responses
+
+### Agent Error
+
+```bash
+intentusnet run --intent FailingIntent --payload '{}'
+```
+
+```json
+{
+  "execution_id": "exec-i9j0k1l2",
+  "status": "error",
+  "agent": "failing-agent",
+  "error": {
+    "code": "AGENT_ERROR",
+    "message": "Agent processing failed",
+    "retryable": true
+  }
+}
+```
+
+Exit code: `4`
+
+### Policy Denial
+
+```json
+{
+  "execution_id": null,
+  "status": "error",
+  "error": {
+    "code": "POLICY_DENIAL",
+    "message": "Intent denied by policy",
+    "details": {
+      "matched_rule": "deny-dangerous",
+      "intent": "DangerousIntent"
+    }
+  }
+}
+```
+
+Exit code: `5`
+
+### No Matching Agent
+
+```json
+{
+  "execution_id": null,
+  "status": "error",
+  "error": {
+    "code": "CAPABILITY_NOT_FOUND",
+    "message": "No agent found for intent: UnknownIntent/1.0"
+  }
+}
+```
+
+Exit code: `3`
+
+### Timeout
+
+```json
+{
+  "execution_id": "exec-m3n4o5p6",
+  "status": "error",
+  "error": {
+    "code": "AGENT_TIMEOUT",
+    "message": "Agent did not respond within 30000ms",
+    "retryable": true
+  }
+}
+```
+
+Exit code: `4`
+
+## Exit Codes
+
+| Code | Meaning |
+|------|---------|
+| 0 | Success |
+| 1 | General error |
+| 2 | Validation error (invalid envelope) |
+| 3 | Routing error (no agent) |
+| 4 | Agent error |
+| 5 | Policy denial |
+
+## Scripting Examples
+
+### Check Success
+
+```bash
+if intentusnet run --intent HealthCheck --payload '{}' --quiet; then
+    echo "System healthy"
+else
+    echo "Health check failed"
+fi
+```
+
+### Capture Output
+
+```bash
+RESULT=$(intentusnet run --intent ProcessIntent --payload '{"id": "123"}')
+EXEC_ID=$(echo "$RESULT" | jq -r '.execution_id')
+echo "Execution ID: $EXEC_ID"
+```
+
+### Batch Processing
+
+```bash
+for id in doc-1 doc-2 doc-3; do
+    intentusnet run \
+        --intent ProcessIntent \
+        --payload "{\"document_id\": \"$id\"}" \
+        --quiet
+done
+```
+
+### With Error Handling
+
+```bash
+#!/bin/bash
+set -e
+
+RESULT=$(intentusnet run --intent DeployIntent --payload @deploy.json 2>&1)
+STATUS=$(echo "$RESULT" | jq -r '.status')
+
+if [ "$STATUS" = "success" ]; then
+    echo "Deployment successful"
+    echo "$RESULT" | jq '.payload'
+else
+    echo "Deployment failed"
+    echo "$RESULT" | jq '.error'
+    exit 1
+fi
+```
+
+## See Also
+
+- [`intentusnet inspect`](./inspect) — View execution details
+- [`intentusnet replay`](./replay) — Replay the execution
+- [`intentusnet validate`](./validate) — Validate before running
