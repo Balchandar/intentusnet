@@ -61,3 +61,12 @@ Thumbs.db
 # IntentusNet specific
 .intentusnet/
 *.log
+
+# Docs site (Docusaurus / VitePress / MDX)
+docs-site/build/
+docs-site/.docusaurus/
+docs-site/.cache/
+docs-site/node_modules/
+docs-site/.env
+docs-site/.env.local
+docs-site/.env.*.local
