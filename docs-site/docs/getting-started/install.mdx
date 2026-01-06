@@ -152,8 +152,7 @@ from intentusnet import IntentusRuntime
 
 runtime = IntentusRuntime(
     enable_recording=True,
-    records_path=".intentusnet/records",
-    log_level="INFO"
+    record_dir=".intentusnet/records",
 )
 ```
 
@@ -197,7 +196,7 @@ PermissionError: [Errno 13] Permission denied: '.intentusnet/records'
 **Solution**: Ensure write permissions or set custom path:
 
 ```python
-runtime = IntentusRuntime(records_path="/tmp/intentusnet/records")
+runtime = IntentusRuntime(record_dir="/tmp/intentusnet/records")
 ```
 
 ### Missing Optional Dependencies

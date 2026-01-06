@@ -94,20 +94,45 @@ python-dateutil >= 2.9.0
 ## Quick Example
 
 ```python
-from intentusnet import IntentusRuntime, BaseAgent, IntentEnvelope, AgentResponse
+from intentusnet import (
+    IntentusRuntime,
+    BaseAgent,
+    AgentDefinition,
+    Capability,
+    IntentRef,
+    AgentResponse,
+)
+
+# Define an agent
+class MyAgent(BaseAgent):
+    def __init__(self, router):
+        definition = AgentDefinition(
+            name="my-agent",
+            capabilities=[Capability(intent=IntentRef(name="MyIntent"))]
+        )
+        super().__init__(definition=definition, router=router)
+
+    def handle_intent(self, env):
+        return AgentResponse.success(
+            payload={"result": "processed"},
+            agent=self.definition.name,
+            trace_id=env.metadata.traceId,
+        )
 
 # Create runtime with recording enabled
 runtime = IntentusRuntime(enable_recording=True)
 
-# Register agents (your agent implementation)
-# ... agent registration code ...
+# Register agent - runtime injects the router
+runtime.register_agent(MyAgent)
 
-# Execute intent - deterministically routed
-response = runtime.router.route_intent(envelope)
+# Send intent via client
+client = runtime.client()
+response = client.send_intent("MyIntent", {"data": "example"})
 
-# Response includes execution_id for replay
-print(f"Execution ID: {response.metadata['execution_id']}")
-print(f"Replayable: {response.metadata.get('replayable', False)}")
+# Response includes routing metadata
+print(f"Status: {response.status}")
+print(f"Agent: {response.metadata.get('agent')}")
+print(f"Trace ID: {response.metadata.get('traceId')}")
 ```
 
 ## Next Steps

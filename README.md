@@ -42,28 +42,45 @@ pip install intentusnet
 Run a deterministic intent execution:
 
 ```python
-from intentusnet.runtime import IntentRuntime
-from intentusnet.intent import Intent
-
-runtime = IntentRuntime.load_default()
-
-result = runtime.execute(
-    Intent(
-        name="summarize_text",
-        payload={"text": "Hello world"},
-    )
+from intentusnet import (
+    IntentusRuntime,
+    BaseAgent,
+    AgentDefinition,
+    Capability,
+    IntentRef,
+    AgentResponse,
 )
 
-print(result.output)
+# Define an agent
+class TextProcessorAgent(BaseAgent):
+    def __init__(self, router):
+        definition = AgentDefinition(
+            name="text-processor",
+            capabilities=[Capability(intent=IntentRef(name="ProcessText"))]
+        )
+        super().__init__(definition=definition, router=router)
+
+    def handle_intent(self, env):
+        text = env.payload.get("text", "")
+        return AgentResponse.success(
+            payload={"length": len(text), "uppercase": text.upper()},
+            agent=self.definition.name,
+            trace_id=env.metadata.traceId,
+        )
+
+# Create runtime and register agent
+runtime = IntentusRuntime(enable_recording=True)
+runtime.register_agent(TextProcessorAgent)
+
+# Send intent via client
+client = runtime.client()
+response = client.send_intent("ProcessText", {"text": "Hello world"})
+
+print(f"Status: {response.status}")
+print(f"Result: {response.payload}")
 ```
 
-Inspect and replay the execution (no model re-run):
-
-```bash
-intentusnet executions list
-intentusnet executions show <execution-id>
-intentusnet executions replay <execution-id>
-```
+Execution records are saved to `.intentusnet/records/` and can be inspected or replayed programmatically.
 
 ---
 

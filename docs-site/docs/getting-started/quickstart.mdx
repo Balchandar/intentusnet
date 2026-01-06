@@ -24,16 +24,27 @@ from intentusnet import (
     IntentEnvelope,
     AgentResponse,
     AgentDefinition,
-    AgentIdentity,
-    AgentEndpoint,
-    AgentHealth,
-    AgentRuntimeInfo,
     Capability,
     IntentRef,
 )
 
 # Define an agent that processes text
 class TextProcessorAgent(BaseAgent):
+    def __init__(self, router):
+        # Define capabilities inside the agent constructor
+        definition = AgentDefinition(
+            name="text-processor",
+            version="1.0",
+            capabilities=[
+                Capability(
+                    intent=IntentRef(name="ProcessTextIntent", version="1.0"),
+                    inputSchema={"text": "string"},
+                    outputSchema={"length": "number", "words": "number"}
+                )
+            ],
+        )
+        super().__init__(definition=definition, router=router)
+
     def handle_intent(self, env: IntentEnvelope) -> AgentResponse:
         text = env.payload.get("text", "")
         processed = {
@@ -42,25 +53,11 @@ class TextProcessorAgent(BaseAgent):
             "words": len(text.split()),
             "uppercase": text.upper()
         }
-        return AgentResponse.success(processed, agent=self.definition.name)
-
-# Create agent definition
-def create_text_processor_definition() -> AgentDefinition:
-    return AgentDefinition(
-        name="text-processor",
-        version="1.0",
-        identity=AgentIdentity(agentId="text-processor", tenantId="default"),
-        capabilities=[
-            Capability(
-                intent=IntentRef(name="ProcessTextIntent", version="1.0"),
-                inputSchema={"text": "string"},
-                outputSchema={"length": "number", "words": "number"}
-            )
-        ],
-        endpoint=AgentEndpoint(type="local", address=""),
-        health=AgentHealth(status="healthy"),
-        runtime=AgentRuntimeInfo(language="python", environment="local")
-    )
+        return AgentResponse.success(
+            processed,
+            agent=self.definition.name,
+            trace_id=env.metadata.traceId,
+        )
 ```
 
 ## Step 2: Run the Intent
@@ -68,55 +65,29 @@ def create_text_processor_definition() -> AgentDefinition:
 Add to `my_agent.py`:
 
 ```python
-from intentusnet import (
-    IntentContext,
-    IntentMetadata,
-    RoutingOptions,
-    Priority,
-)
-from datetime import datetime
-
 def main():
     # Create runtime with recording enabled
     runtime = IntentusRuntime(enable_recording=True)
 
-    # Create and register agent
-    definition = create_text_processor_definition()
-    agent = TextProcessorAgent(definition, runtime.router)
-    runtime.registry.register(definition)
+    # Register the agent using a factory function
+    # The runtime injects the router automatically
+    runtime.register_agent(TextProcessorAgent)
 
-    # Bind agent to router
-    runtime.router._agents[definition.name] = agent
+    # Create a client to send intents
+    client = runtime.client()
 
-    # Create intent envelope
-    envelope = IntentEnvelope(
-        version="1.0",
-        intent=IntentRef(name="ProcessTextIntent", version="1.0"),
-        payload={"text": "Hello, IntentusNet! This is a test message."},
-        context=IntentContext(
-            sourceAgent="quickstart",
-            timestamp=datetime.utcnow().isoformat(),
-            priority=Priority.NORMAL,
-            tags=["quickstart", "demo"]
-        ),
-        metadata=IntentMetadata(
-            requestId="req-quickstart-001",
-            source="quickstart-script",
-            createdAt=datetime.utcnow().isoformat(),
-            traceId="trace-quickstart-001",
-            identityChain=[]
-        ),
-        routing=RoutingOptions()
-    )
-
-    # Execute intent
+    # Send the intent - the client builds the envelope for you
     print("Executing intent...")
-    response = runtime.router.route_intent(envelope)
+    response = client.send_intent(
+        "ProcessTextIntent",
+        {"text": "Hello, IntentusNet! This is a test message."},
+        tags=["quickstart", "demo"],
+    )
 
     # Print results
     print(f"\nStatus: {response.status}")
-    print(f"Execution ID: {response.metadata.get('execution_id', 'N/A')}")
     print(f"Agent: {response.metadata.get('agent', 'N/A')}")
+    print(f"Trace ID: {response.metadata.get('traceId', 'N/A')}")
     print(f"\nPayload:")
     import json
     print(json.dumps(response.payload, indent=2))
@@ -137,8 +108,8 @@ Expected output:
 Executing intent...
 
 Status: success
-Execution ID: exec-a1b2c3d4e5f6
 Agent: text-processor
+Trace ID: a1b2c3d4-e5f6-7890-abcd-ef1234567890
 
 Payload:
 {
@@ -157,38 +128,10 @@ Check the recorded execution:
 ls -la .intentusnet/records/
 ```
 
-View the execution record:
+View an execution record:
 
 ```bash
-cat .intentusnet/records/exec-*.json | python -m json.tool
-```
-
-Output:
-
-```json
-{
-  "header": {
-    "executionId": "exec-a1b2c3d4e5f6",
-    "createdUtcIso": "2024-01-15T10:30:00.123456Z",
-    "envelopeHash": "sha256:e3b0c44298fc1c149afbf4c8996fb924...",
-    "replayable": true,
-    "replayableReason": null
-  },
-  "envelope": {...},
-  "routerDecision": {
-    "agent": "text-processor",
-    "intent": "ProcessTextIntent",
-    "reason": "deterministic_match"
-  },
-  "events": [
-    {"seq": 1, "type": "INTENT_RECEIVED", ...},
-    {"seq": 2, "type": "AGENT_ATTEMPT_START", ...},
-    {"seq": 3, "type": "AGENT_ATTEMPT_END", ...},
-    {"seq": 4, "type": "ROUTER_DECISION", ...},
-    {"seq": 5, "type": "FINAL_RESPONSE", ...}
-  ],
-  "finalResponse": {...}
-}
+cat .intentusnet/records/*.json | python -m json.tool | head -50
 ```
 
 ## Step 5: Replay the Execution
@@ -201,39 +144,143 @@ from intentusnet import FileExecutionStore, ReplayEngine
 # Load the execution record
 store = FileExecutionStore(".intentusnet/records")
 records = list(store.list_all())
-record = store.load(records[0])  # Load first record
 
-# Create replay engine
-engine = ReplayEngine(record)
+if records:
+    record = store.load(records[0])  # Load first record
 
-# Check if replayable
-is_ok, reason = engine.is_replayable()
-print(f"Replayable: {is_ok}")
+    # Create replay engine
+    engine = ReplayEngine(record)
 
-if is_ok:
-    result = engine.replay()
-    print(f"Replayed payload: {result.payload}")
+    # Check if replayable
+    is_ok, reason = engine.is_replayable()
+    print(f"Replayable: {is_ok}")
+
+    if is_ok:
+        result = engine.replay()
+        print(f"Replayed payload: {result.payload}")
+else:
+    print("No records found")
+```
+
+## Complete Working Example
+
+Here's the complete `my_agent.py` file:
+
+```python
+from intentusnet import (
+    IntentusRuntime,
+    BaseAgent,
+    IntentEnvelope,
+    AgentResponse,
+    AgentDefinition,
+    Capability,
+    IntentRef,
+)
+import json
+
+class TextProcessorAgent(BaseAgent):
+    def __init__(self, router):
+        definition = AgentDefinition(
+            name="text-processor",
+            version="1.0",
+            capabilities=[
+                Capability(
+                    intent=IntentRef(name="ProcessTextIntent", version="1.0"),
+                    inputSchema={"text": "string"},
+                    outputSchema={"length": "number", "words": "number"}
+                )
+            ],
+        )
+        super().__init__(definition=definition, router=router)
+
+    def handle_intent(self, env: IntentEnvelope) -> AgentResponse:
+        text = env.payload.get("text", "")
+        processed = {
+            "original": text,
+            "length": len(text),
+            "words": len(text.split()),
+            "uppercase": text.upper()
+        }
+        return AgentResponse.success(
+            processed,
+            agent=self.definition.name,
+            trace_id=env.metadata.traceId,
+        )
+
+def main():
+    # Create runtime with recording enabled
+    runtime = IntentusRuntime(enable_recording=True)
+
+    # Register the agent
+    runtime.register_agent(TextProcessorAgent)
+
+    # Create a client and send the intent
+    client = runtime.client()
+    response = client.send_intent(
+        "ProcessTextIntent",
+        {"text": "Hello, IntentusNet! This is a test message."},
+        tags=["quickstart", "demo"],
+    )
+
+    # Print results
+    print(f"Status: {response.status}")
+    print(f"Agent: {response.metadata.get('agent', 'N/A')}")
+    print(f"\nPayload:\n{json.dumps(response.payload, indent=2)}")
+
+if __name__ == "__main__":
+    main()
 ```
 
 ## What Just Happened?
 
-1. **Agent Registration**: You created and registered an agent with a capability
-2. **Deterministic Routing**: The router matched your intent to the agent
-3. **Execution Recording**: Every step was recorded with stable hashes
-4. **Replay Capability**: The recorded execution can be replayed without re-running
+1. **Agent Registration**: You created and registered an agent with a capability using `runtime.register_agent()`
+2. **Client Creation**: The runtime provides a client via `runtime.client()`
+3. **Intent Sending**: The client's `send_intent()` method builds the envelope and routes it
+4. **Deterministic Routing**: The router matched your intent to the agent based on capabilities
+5. **Execution Recording**: Every step was recorded to `.intentusnet/records/`
+
+## Execution Flow
+
+```
+client.send_intent("ProcessTextIntent", {...})
+        │
+        ▼
+┌───────────────────┐
+│   IntentusClient  │  Builds IntentEnvelope
+└─────────┬─────────┘
+          │
+          ▼
+┌───────────────────┐
+│    Transport      │  Routes to IntentRouter
+└─────────┬─────────┘
+          │
+          ▼
+┌───────────────────┐
+│   IntentRouter    │  Finds agent by capability
+└─────────┬─────────┘
+          │
+          ▼
+┌───────────────────┐
+│ TextProcessorAgent│  Executes handle_intent()
+└─────────┬─────────┘
+          │
+          ▼
+    AgentResponse
+```
 
 ## Key Concepts Demonstrated
 
 | Concept | What You Saw |
 |---------|--------------|
-| IntentEnvelope | Structured request with metadata |
-| AgentResponse | Standardized response format |
-| Execution ID | Unique identifier for the execution |
-| Recording | Automatic capture of execution |
-| Replay | Return recorded output |
+| `IntentusRuntime` | Central runtime that wires everything together |
+| `runtime.register_agent()` | Registers an agent with the runtime |
+| `runtime.client()` | Returns a client for sending intents |
+| `client.send_intent()` | Sends an intent and returns a response |
+| `AgentResponse` | Standardized response format |
+| Recording | Automatic capture to `.intentusnet/records/` |
 
 ## Next Steps
 
-- [Walkthrough](./walkthrough) — Complete example with policy filtering and crash recovery
+- [Walkthrough](./walkthrough) — Complete example with fallback routing
 - [CLI Reference](../cli/overview) — Command-line tools for inspection and replay
 - [Guarantees](../guarantees/overview) — Understand what IntentusNet guarantees

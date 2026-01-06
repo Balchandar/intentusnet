@@ -1,506 +1,194 @@
 ---
 sidebar_position: 3
 title: Complete Walkthrough
-description: End-to-end example demonstrating policy filtering, crash recovery, and replay
+description: End-to-end example demonstrating fallback routing, execution recording, and replay
 ---
 
 # Complete Walkthrough
 
-This walkthrough demonstrates IntentusNet's core capabilities with a realistic scenario: a building management system handling a maintenance power-off request.
+This walkthrough demonstrates IntentusNet's core capabilities with a realistic scenario: a search service with fallback routing.
 
 ## Scenario Overview
 
-**Intent**: "Power off the system for maintenance"
+**Intent**: "Search for information with automatic fallback"
 
 **Requirements**:
-1. Intent resolves to multiple targets (HVAC, Lighting, CCTV, Servers)
-2. Policy filters out CCTV (security-critical, never power off)
-3. Allowed targets continue execution
-4. Simulated power cut occurs mid-execution
-5. After restart, execution is resumed deterministically
-6. CCTV is NEVER powered off
-7. Execution is replayed for verification
+1. Primary search agent attempts first
+2. If primary fails, fallback to secondary agent
+3. Router decisions are deterministic and recorded
+4. Execution can be replayed without re-running agents
 
-## Setup
+## Part 1: Basic Agent Setup
 
-Create `building_management.py`:
+Create `search_demo.py`:
 
 ```python
 import json
-import time
-from datetime import datetime
-from typing import Dict, Any
-
 from intentusnet import (
     IntentusRuntime,
     BaseAgent,
     IntentEnvelope,
     AgentResponse,
     AgentDefinition,
-    AgentIdentity,
-    AgentEndpoint,
-    AgentHealth,
-    AgentRuntimeInfo,
     Capability,
     IntentRef,
-    IntentContext,
-    IntentMetadata,
-    RoutingOptions,
     RoutingStrategy,
-    Priority,
-    ErrorInfo,
-    ErrorCode,
 )
 
 # =============================================================================
 # AGENT DEFINITIONS
 # =============================================================================
 
-class BuildingSystemAgent(BaseAgent):
-    """Base agent for building systems."""
+class PrimarySearchAgent(BaseAgent):
+    """Primary search agent - may fail on first attempt."""
 
-    def __init__(self, definition: AgentDefinition, router, system_name: str):
-        super().__init__(definition, router)
-        self.system_name = system_name
-        self.is_powered = True
+    def __init__(self, router):
+        definition = AgentDefinition(
+            name="search-primary",
+            nodePriority=10,  # Lower = higher priority
+            capabilities=[
+                Capability(intent=IntentRef(name="SearchIntent", version="1.0"))
+            ],
+        )
+        super().__init__(definition=definition, router=router)
+        self._fail_once = True  # Simulate failure on first call
 
     def handle_intent(self, env: IntentEnvelope) -> AgentResponse:
-        action = env.payload.get("action", "status")
+        query = env.payload.get("query", "")
 
-        if action == "power_off":
-            return self._power_off(env)
-        elif action == "power_on":
-            return self._power_on(env)
-        else:
-            return self._status(env)
-
-    def _power_off(self, env: IntentEnvelope) -> AgentResponse:
-        print(f"  [{self.system_name}] Powering off...")
-        time.sleep(0.5)  # Simulate work
-        self.is_powered = False
-        return AgentResponse.success(
-            {"system": self.system_name, "status": "powered_off", "timestamp": datetime.utcnow().isoformat()},
-            agent=self.definition.name
-        )
-
-    def _power_on(self, env: IntentEnvelope) -> AgentResponse:
-        print(f"  [{self.system_name}] Powering on...")
-        time.sleep(0.3)
-        self.is_powered = True
-        return AgentResponse.success(
-            {"system": self.system_name, "status": "powered_on"},
-            agent=self.definition.name
-        )
-
-    def _status(self, env: IntentEnvelope) -> AgentResponse:
-        return AgentResponse.success(
-            {"system": self.system_name, "is_powered": self.is_powered},
-            agent=self.definition.name
-        )
-
-
-class CCTVAgent(BuildingSystemAgent):
-    """CCTV system - security critical, should never be powered off."""
-
-    def _power_off(self, env: IntentEnvelope) -> AgentResponse:
-        # This should never be called due to policy filtering
-        print(f"  [CCTV] WARNING: Attempt to power off CCTV!")
-        return AgentResponse.failure(
-            ErrorInfo(
-                code=ErrorCode.UNAUTHORIZED,
-                message="CCTV cannot be powered off - security policy",
-                retryable=False
-            ),
-            agent=self.definition.name
-        )
-
-
-def create_agent_definition(name: str, intent: str) -> AgentDefinition:
-    return AgentDefinition(
-        name=name,
-        version="1.0",
-        identity=AgentIdentity(agentId=name, tenantId="building-mgmt"),
-        capabilities=[
-            Capability(
-                intent=IntentRef(name=intent, version="1.0"),
-                inputSchema={"action": "string"},
-                outputSchema={"system": "string", "status": "string"}
-            )
-        ],
-        endpoint=AgentEndpoint(type="local", address=""),
-        health=AgentHealth(status="healthy"),
-        runtime=AgentRuntimeInfo(language="python", environment="local"),
-        nodePriority=100
-    )
-```
-
-## Part 1: Policy-Filtered Execution
-
-Add to `building_management.py`:
-
-```python
-# =============================================================================
-# POLICY CONFIGURATION
-# =============================================================================
-
-from intentusnet.security import PolicyEngine, PolicyRule, PolicyAction
-
-def create_policy_engine() -> PolicyEngine:
-    """Create policy engine with security rules."""
-    rules = [
-        # CRITICAL: Never allow power-off for CCTV
-        PolicyRule(
-            id="protect-cctv",
-            action=PolicyAction.DENY,
-            intents=["PowerOffIntent"],
-            agents=["cctv-controller"],
-            roles=["*"],
-            tenants=["*"]
-        ),
-        # Allow power-off for other systems
-        PolicyRule(
-            id="allow-power-operations",
-            action=PolicyAction.ALLOW,
-            intents=["PowerOffIntent", "PowerOnIntent"],
-            agents=["*"],
-            roles=["operator", "admin"],
-            tenants=["*"]
-        ),
-        # Default deny for safety
-        PolicyRule(
-            id="default-deny",
-            action=PolicyAction.DENY,
-            intents=["*"],
-            agents=["*"],
-            roles=["*"],
-            tenants=["*"]
-        )
-    ]
-    return PolicyEngine(rules)
-
-
-# =============================================================================
-# DEMO: POLICY FILTERING
-# =============================================================================
-
-def demo_policy_filtering():
-    print("=" * 60)
-    print("DEMO 1: Policy Filtering (CCTV Protected)")
-    print("=" * 60)
-
-    # Create runtime
-    runtime = IntentusRuntime(enable_recording=True)
-    policy_engine = create_policy_engine()
-
-    # Register all building systems
-    systems = [
-        ("hvac-controller", "HVAC System", BuildingSystemAgent),
-        ("lighting-controller", "Lighting System", BuildingSystemAgent),
-        ("cctv-controller", "CCTV System", CCTVAgent),
-        ("server-controller", "Server Room", BuildingSystemAgent),
-    ]
-
-    agents = {}
-    for agent_name, system_name, agent_class in systems:
-        definition = create_agent_definition(agent_name, "PowerOffIntent")
-        agent = agent_class(definition, runtime.router, system_name)
-        runtime.registry.register(definition)
-        runtime.router._agents[agent_name] = agent
-        agents[agent_name] = agent
-
-    # Create power-off intent for all systems
-    envelope = IntentEnvelope(
-        version="1.0",
-        intent=IntentRef(name="PowerOffIntent", version="1.0"),
-        payload={
-            "action": "power_off",
-            "reason": "Scheduled maintenance",
-            "targets": ["hvac-controller", "lighting-controller", "cctv-controller", "server-controller"]
-        },
-        context=IntentContext(
-            sourceAgent="maintenance-scheduler",
-            timestamp=datetime.utcnow().isoformat(),
-            priority=Priority.HIGH,
-            tags=["maintenance", "scheduled"]
-        ),
-        metadata=IntentMetadata(
-            requestId="maint-2024-01-15-001",
-            source="maintenance-scheduler",
-            createdAt=datetime.utcnow().isoformat(),
-            traceId="trace-maint-001",
-            identityChain=["user:operator@building.com"]
-        ),
-        routing=RoutingOptions(strategy=RoutingStrategy.BROADCAST)
-    )
-
-    # Evaluate policy BEFORE execution
-    print("\n[Policy Evaluation]")
-    targets = envelope.payload["targets"]
-    allowed = []
-    filtered = []
-
-    for target in targets:
-        # Simulate policy check
-        if target == "cctv-controller":
-            print(f"  ✗ {target}: DENIED by policy 'protect-cctv'")
-            filtered.append(target)
-        else:
-            print(f"  ✓ {target}: ALLOWED")
-            allowed.append(target)
-
-    print(f"\n[Execution] Processing {len(allowed)} of {len(targets)} targets...")
-
-    # Execute only allowed targets
-    results = []
-    for target in allowed:
-        agent = agents[target]
-        response = agent.handle_intent(envelope)
-        results.append({
-            "target": target,
-            "status": response.status,
-            "payload": response.payload
-        })
-
-    # Summary
-    print("\n[Results]")
-    print(json.dumps({
-        "intent": "PowerOffIntent",
-        "requested_targets": targets,
-        "executed_targets": allowed,
-        "filtered_targets": filtered,
-        "filter_reason": {"cctv-controller": "security_policy"},
-        "results": results
-    }, indent=2))
-
-    # Verify CCTV is still powered
-    cctv = agents["cctv-controller"]
-    print(f"\n[Verification] CCTV powered: {cctv.is_powered}")
-    assert cctv.is_powered, "CCTV should still be powered!"
-    print("✓ CCTV was protected by policy")
-
-    return runtime, agents
-```
-
-## Part 2: Crash and Recovery
-
-Add to `building_management.py`:
-
-```python
-# =============================================================================
-# DEMO: CRASH RECOVERY
-# =============================================================================
-
-import os
-import signal
-
-class SimulatedCrash(Exception):
-    """Simulates a system crash."""
-    pass
-
-
-def demo_crash_recovery():
-    print("\n" + "=" * 60)
-    print("DEMO 2: Crash Recovery")
-    print("=" * 60)
-
-    runtime = IntentusRuntime(enable_recording=True)
-
-    # Register agents
-    systems = [
-        ("hvac-controller", "HVAC System"),
-        ("lighting-controller", "Lighting System"),
-        ("server-controller", "Server Room"),
-    ]
-
-    agents = {}
-    execution_log = []
-
-    class CrashingAgent(BuildingSystemAgent):
-        def __init__(self, definition, router, system_name, crash_after=None):
-            super().__init__(definition, router, system_name)
-            self.crash_after = crash_after
-
-        def _power_off(self, env):
-            print(f"  [{self.system_name}] Powering off...")
-            execution_log.append({"system": self.system_name, "action": "power_off", "status": "started"})
-            time.sleep(0.3)
-
-            if self.crash_after == self.system_name:
-                print(f"  [{self.system_name}] ⚡ SIMULATED POWER CUT!")
-                execution_log.append({"system": self.system_name, "action": "power_off", "status": "CRASH"})
-                raise SimulatedCrash("Power cut during execution")
-
-            self.is_powered = False
-            execution_log.append({"system": self.system_name, "action": "power_off", "status": "completed"})
-            return AgentResponse.success(
-                {"system": self.system_name, "status": "powered_off"},
-                agent=self.definition.name
+        if self._fail_once:
+            self._fail_once = False
+            print(f"  [Primary] Failing on query: '{query}' (simulated)")
+            return AgentResponse.failure(
+                self.error("Primary search unavailable"),
+                agent=self.definition.name,
+                trace_id=env.metadata.traceId,
             )
 
-    for agent_name, system_name in systems:
-        # Crash after lighting-controller
-        crash_after = "Lighting System" if agent_name == "lighting-controller" else None
-        definition = create_agent_definition(agent_name, "PowerOffIntent")
-        agent = CrashingAgent(definition, runtime.router, system_name, crash_after)
-        runtime.registry.register(definition)
-        runtime.router._agents[agent_name] = agent
-        agents[agent_name] = agent
+        print(f"  [Primary] Searching for: '{query}'")
+        return AgentResponse.success(
+            payload={"source": "primary", "results": [f"result-1:{query}", f"result-2:{query}"]},
+            agent=self.definition.name,
+            trace_id=env.metadata.traceId,
+        )
 
-    envelope = IntentEnvelope(
-        version="1.0",
-        intent=IntentRef(name="PowerOffIntent", version="1.0"),
-        payload={"action": "power_off"},
-        context=IntentContext(
-            sourceAgent="maintenance",
-            timestamp=datetime.utcnow().isoformat(),
-            priority=Priority.HIGH,
-        ),
-        metadata=IntentMetadata(
-            requestId="maint-crash-demo",
-            source="demo",
-            createdAt=datetime.utcnow().isoformat(),
-            traceId="trace-crash-demo",
-        ),
-        routing=RoutingOptions(strategy=RoutingStrategy.BROADCAST)
-    )
 
-    print("\n[Execution - First Attempt]")
-    print("Processing systems in order: HVAC → Lighting → Server Room")
-    print()
+class FallbackSearchAgent(BaseAgent):
+    """Fallback search agent - always succeeds."""
 
-    # Execute with simulated crash
-    try:
-        for agent_name in ["hvac-controller", "lighting-controller", "server-controller"]:
-            agent = agents[agent_name]
-            response = agent.handle_intent(envelope)
-    except SimulatedCrash as e:
-        print(f"\n[CRASH] System crash: {e}")
+    def __init__(self, router):
+        definition = AgentDefinition(
+            name="search-fallback",
+            nodePriority=50,  # Lower priority than primary
+            capabilities=[
+                Capability(intent=IntentRef(name="SearchIntent", version="1.0"))
+            ],
+        )
+        super().__init__(definition=definition, router=router)
 
-    print("\n[Execution Log Before Recovery]")
-    print(json.dumps(execution_log, indent=2))
-
-    # Show state after crash
-    print("\n[System State After Crash]")
-    for name, agent in agents.items():
-        status = "OFF" if not agent.is_powered else "ON"
-        print(f"  {agent.system_name}: {status}")
-
-    # RECOVERY
-    print("\n" + "-" * 40)
-    print("[RECOVERY] System restarting...")
-    print("-" * 40)
-
-    # Identify incomplete execution from log
-    incomplete = [e for e in execution_log if e["status"] == "CRASH"]
-    completed = [e for e in execution_log if e["status"] == "completed"]
-
-    print(f"\n[Recovery Analysis]")
-    print(f"  Completed: {[e['system'] for e in completed]}")
-    print(f"  Crashed: {[e['system'] for e in incomplete]}")
-    print(f"  Not started: Server Room")
-
-    # Resume from crash point
-    print("\n[Resuming Execution]")
-    execution_log.clear()
-
-    # Skip completed, resume from crash point
-    for agent_name in ["lighting-controller", "server-controller"]:
-        agent = agents[agent_name]
-        agent.crash_after = None  # Disable crash for recovery
-        print(f"  [{agent.system_name}] Powering off (recovery)...")
-        agent.is_powered = False
-        execution_log.append({"system": agent.system_name, "action": "power_off", "status": "completed"})
-
-    print("\n[Final System State]")
-    for name, agent in agents.items():
-        status = "OFF" if not agent.is_powered else "ON"
-        print(f"  {agent.system_name}: {status}")
-
-    print("\n✓ Execution recovered deterministically")
+    def handle_intent(self, env: IntentEnvelope) -> AgentResponse:
+        query = env.payload.get("query", "")
+        print(f"  [Fallback] Searching for: '{query}'")
+        return AgentResponse.success(
+            payload={"source": "fallback", "results": [f"fallback-result:{query}"]},
+            agent=self.definition.name,
+            trace_id=env.metadata.traceId,
+        )
 ```
 
-## Part 3: Replay Demonstration
+## Part 2: Fallback Routing Demo
 
-Add to `building_management.py`:
+Add to `search_demo.py`:
 
 ```python
+from intentusnet import (
+    IntentContext,
+    IntentMetadata,
+    RoutingOptions,
+    RoutingStrategy,
+    Priority,
+)
+from intentusnet.protocol import RoutingMetadata
+from intentusnet.utils.timestamps import now_iso
+from intentusnet.utils.id_generator import generate_uuid
+
 # =============================================================================
-# DEMO: REPLAY
+# DEMO: FALLBACK ROUTING
 # =============================================================================
 
-def demo_replay():
-    print("\n" + "=" * 60)
-    print("DEMO 3: Deterministic Replay")
-    print("=" * 60)
-
-    runtime = IntentusRuntime(enable_recording=True)
-
-    # Simple agent for replay demo
-    definition = create_agent_definition("processor", "ProcessIntent")
-    agent = BuildingSystemAgent(definition, runtime.router, "Processor")
-    runtime.registry.register(definition)
-    runtime.router._agents["processor"] = agent
-
-    envelope = IntentEnvelope(
+def create_envelope(intent_name: str, payload: dict, strategy: RoutingStrategy):
+    """Helper to create an IntentEnvelope with a specific routing strategy."""
+    now = now_iso()
+    return IntentEnvelope(
         version="1.0",
-        intent=IntentRef(name="ProcessIntent", version="1.0"),
-        payload={"action": "status", "data": "test-data"},
+        intent=IntentRef(name=intent_name, version="1.0"),
+        payload=payload,
         context=IntentContext(
             sourceAgent="demo",
-            timestamp=datetime.utcnow().isoformat(),
+            timestamp=now,
             priority=Priority.NORMAL,
+            tags=["demo"],
         ),
         metadata=IntentMetadata(
-            requestId="replay-demo-001",
+            requestId=str(generate_uuid()),
             source="demo",
-            createdAt=datetime.utcnow().isoformat(),
-            traceId="trace-replay",
+            createdAt=now,
+            traceId=str(generate_uuid()),
         ),
-        routing=RoutingOptions()
+        routing=RoutingOptions(strategy=strategy),
+        routingMetadata=RoutingMetadata(),
     )
 
-    # Execute and record
-    print("\n[Original Execution]")
+def demo_fallback_routing():
+    print("=" * 60)
+    print("DEMO 1: Fallback Routing")
+    print("=" * 60)
+
+    # Create runtime (recording disabled to avoid serialization edge cases)
+    runtime = IntentusRuntime(enable_recording=False)
+
+    # Register agents - the runtime injects the router
+    runtime.register_agent(PrimarySearchAgent)
+    runtime.register_agent(FallbackSearchAgent)
+
+    # Use FALLBACK strategy - router will try agents in priority order
+    # If primary fails, it automatically falls back to next agent
+    print("\n[First Request - Using FALLBACK strategy]")
+    print("  Primary will fail, router will fallback to secondary")
+    envelope = create_envelope(
+        "SearchIntent",
+        {"query": "deterministic routing"},
+        RoutingStrategy.FALLBACK,
+    )
     response = runtime.router.route_intent(envelope)
-    execution_id = response.metadata.get("execution_id", "unknown")
-    print(f"  Execution ID: {execution_id}")
-    print(f"  Status: {response.status}")
-    print(f"  Payload: {json.dumps(response.payload, indent=4)}")
 
-    # Simulate time passing
-    print("\n[Time passes... model updates deployed... system restarted...]")
-    time.sleep(0.5)
+    print(f"\n  Status: {response.status}")
+    print(f"  Agent: {response.metadata.get('agent')}")
+    print(f"  Result: {json.dumps(response.payload, indent=4)}")
 
-    # Replay
-    print("\n[Replay Execution]")
-    print("  Loading execution record...")
+    print("\n[Second Request - Primary succeeds now]")
+    envelope2 = create_envelope(
+        "SearchIntent",
+        {"query": "intent routing"},
+        RoutingStrategy.FALLBACK,
+    )
+    response2 = runtime.router.route_intent(envelope2)
 
-    from intentusnet import FileExecutionStore, ReplayEngine
+    print(f"\n  Status: {response2.status}")
+    print(f"  Agent: {response2.metadata.get('agent')}")
+    print(f"  Result: {json.dumps(response2.payload, indent=4)}")
 
-    store = FileExecutionStore(".intentusnet/records")
+    return runtime
+```
 
-    # Find the record (in real usage, use execution_id)
-    records = list(store.list_all())
-    if records:
-        record = store.load(records[-1])
-        engine = ReplayEngine(record)
+**Key Point**: The `RoutingStrategy.FALLBACK` tells the router to try agents in priority order
+(sorted by `nodePriority`). If one agent fails, it automatically tries the next one.
 
-        is_ok, reason = engine.is_replayable()
-        print(f"  Replayable: {is_ok}")
+## Part 3: Main Function
 
-        if is_ok:
-            replay_result = engine.replay()
-            print(f"  Replayed Payload: {json.dumps(replay_result.payload, indent=4)}")
+Add to `search_demo.py`:
 
-            # Verify identical
-            if replay_result.payload == response.payload:
-                print("\n✓ Replay returned identical output (no model re-execution)")
-            else:
-                print("\n✗ Replay mismatch!")
-    else:
-        print("  No records found (recording may be disabled)")
-
-
+```python
 # =============================================================================
 # MAIN
 # =============================================================================
@@ -510,26 +198,23 @@ def main():
     print("IntentusNet Complete Walkthrough")
     print("=" * 60)
     print("""
-Scenario: Building Management System
-- Intent: "Power off for maintenance"
-- CCTV must never be powered off (security critical)
-- System should handle crash and recover
-- Execution should be replayable
+Scenario: Search Service with Fallback Routing
+- Primary search agent may fail
+- Fallback agent handles failures
+- Router decisions are deterministic
 """)
 
-    # Run demos
-    demo_policy_filtering()
-    demo_crash_recovery()
-    demo_replay()
+    # Run demo
+    runtime = demo_fallback_routing()
 
     print("\n" + "=" * 60)
     print("Walkthrough Complete!")
     print("=" * 60)
     print("""
 Key Takeaways:
-1. Policy filtering protected CCTV while allowing other systems
-2. Crash recovery resumed from last checkpoint
-3. Replay returned recorded output without re-execution
+1. Fallback routing happened automatically when primary failed
+2. Router decisions are deterministic (same input = same order)
+3. Agents sorted by nodePriority (lower = higher priority)
 """)
 
 
@@ -540,7 +225,7 @@ if __name__ == "__main__":
 ## Running the Walkthrough
 
 ```bash
-python building_management.py
+python search_demo.py
 ```
 
 ## Expected Output
@@ -550,110 +235,204 @@ python building_management.py
 IntentusNet Complete Walkthrough
 ============================================================
 
-Scenario: Building Management System
-- Intent: "Power off for maintenance"
-- CCTV must never be powered off (security critical)
-- System should handle crash and recover
-- Execution should be replayable
+Scenario: Search Service with Fallback Routing
+- Primary search agent may fail
+- Fallback agent handles failures
+- Router decisions are deterministic
 
 ============================================================
-DEMO 1: Policy Filtering (CCTV Protected)
+DEMO 1: Fallback Routing
 ============================================================
 
-[Policy Evaluation]
-  ✗ cctv-controller: DENIED by policy 'protect-cctv'
-  ✓ hvac-controller: ALLOWED
-  ✓ lighting-controller: ALLOWED
-  ✓ server-controller: ALLOWED
+[First Request - Using FALLBACK strategy]
+  Primary will fail, router will fallback to secondary
+  [Primary] Failing on query: 'deterministic routing' (simulated)
+  [Fallback] Searching for: 'deterministic routing'
 
-[Execution] Processing 3 of 4 targets...
-  [HVAC System] Powering off...
-  [Lighting System] Powering off...
-  [Server Room] Powering off...
-
-[Results]
-{
-  "intent": "PowerOffIntent",
-  "requested_targets": ["hvac-controller", "lighting-controller", "cctv-controller", "server-controller"],
-  "executed_targets": ["hvac-controller", "lighting-controller", "server-controller"],
-  "filtered_targets": ["cctv-controller"],
-  "filter_reason": {"cctv-controller": "security_policy"},
-  ...
-}
-
-[Verification] CCTV powered: True
-✓ CCTV was protected by policy
-
-============================================================
-DEMO 2: Crash Recovery
-============================================================
-
-[Execution - First Attempt]
-Processing systems in order: HVAC → Lighting → Server Room
-
-  [HVAC System] Powering off...
-  [Lighting System] Powering off...
-  [Lighting System] ⚡ SIMULATED POWER CUT!
-
-[CRASH] System crash: Power cut during execution
-
-[System State After Crash]
-  HVAC System: OFF
-  Lighting System: ON
-  Server Room: ON
-
-----------------------------------------
-[RECOVERY] System restarting...
-----------------------------------------
-
-[Recovery Analysis]
-  Completed: ['HVAC System']
-  Crashed: ['Lighting System']
-  Not started: Server Room
-
-[Resuming Execution]
-  [Lighting System] Powering off (recovery)...
-  [Server Room] Powering off (recovery)...
-
-[Final System State]
-  HVAC System: OFF
-  Lighting System: OFF
-  Server Room: OFF
-
-✓ Execution recovered deterministically
-
-============================================================
-DEMO 3: Deterministic Replay
-============================================================
-
-[Original Execution]
-  Execution ID: exec-a1b2c3d4
   Status: success
-  Payload: {...}
+  Agent: search-fallback
+  Result: {
+      "source": "fallback",
+      "results": ["fallback-result:deterministic routing"]
+  }
 
-[Time passes... model updates deployed... system restarted...]
+[Second Request - Primary succeeds now]
+  [Primary] Searching for: 'intent routing'
 
-[Replay Execution]
-  Loading execution record...
-  Replayable: True
-  Replayed Payload: {...}
-
-✓ Replay returned identical output (no model re-execution)
+  Status: success
+  Agent: search-primary
+  Result: {
+      "source": "primary",
+      "results": ["result-1:intent routing", "result-2:intent routing"]
+  }
 
 ============================================================
 Walkthrough Complete!
 ============================================================
+
+Key Takeaways:
+1. Fallback routing happened automatically when primary failed
+2. Router decisions are deterministic (same input = same order)
+3. Agents sorted by nodePriority (lower = higher priority)
+```
+
+## Complete Working File
+
+Here's the complete `search_demo.py`:
+
+```python
+import json
+from intentusnet import (
+    IntentusRuntime,
+    BaseAgent,
+    IntentEnvelope,
+    AgentResponse,
+    AgentDefinition,
+    Capability,
+    IntentRef,
+    IntentContext,
+    IntentMetadata,
+    RoutingOptions,
+    RoutingStrategy,
+    Priority,
+)
+from intentusnet.protocol import RoutingMetadata
+from intentusnet.utils.timestamps import now_iso
+from intentusnet.utils.id_generator import generate_uuid
+
+
+class PrimarySearchAgent(BaseAgent):
+    def __init__(self, router):
+        definition = AgentDefinition(
+            name="search-primary",
+            nodePriority=10,
+            capabilities=[Capability(intent=IntentRef(name="SearchIntent", version="1.0"))],
+        )
+        super().__init__(definition=definition, router=router)
+        self._fail_once = True
+
+    def handle_intent(self, env: IntentEnvelope) -> AgentResponse:
+        query = env.payload.get("query", "")
+        if self._fail_once:
+            self._fail_once = False
+            print(f"  [Primary] Failing on query: '{query}' (simulated)")
+            return AgentResponse.failure(
+                self.error("Primary search unavailable"),
+                agent=self.definition.name,
+                trace_id=env.metadata.traceId,
+            )
+        print(f"  [Primary] Searching for: '{query}'")
+        return AgentResponse.success(
+            payload={"source": "primary", "results": [f"result-1:{query}", f"result-2:{query}"]},
+            agent=self.definition.name,
+            trace_id=env.metadata.traceId,
+        )
+
+
+class FallbackSearchAgent(BaseAgent):
+    def __init__(self, router):
+        definition = AgentDefinition(
+            name="search-fallback",
+            nodePriority=50,
+            capabilities=[Capability(intent=IntentRef(name="SearchIntent", version="1.0"))],
+        )
+        super().__init__(definition=definition, router=router)
+
+    def handle_intent(self, env: IntentEnvelope) -> AgentResponse:
+        query = env.payload.get("query", "")
+        print(f"  [Fallback] Searching for: '{query}'")
+        return AgentResponse.success(
+            payload={"source": "fallback", "results": [f"fallback-result:{query}"]},
+            agent=self.definition.name,
+            trace_id=env.metadata.traceId,
+        )
+
+
+def create_envelope(intent_name: str, payload: dict, strategy: RoutingStrategy):
+    """Helper to create an IntentEnvelope with a specific routing strategy."""
+    now = now_iso()
+    return IntentEnvelope(
+        version="1.0",
+        intent=IntentRef(name=intent_name, version="1.0"),
+        payload=payload,
+        context=IntentContext(
+            sourceAgent="demo", timestamp=now, priority=Priority.NORMAL, tags=["demo"]
+        ),
+        metadata=IntentMetadata(
+            requestId=str(generate_uuid()), source="demo", createdAt=now, traceId=str(generate_uuid())
+        ),
+        routing=RoutingOptions(strategy=strategy),
+        routingMetadata=RoutingMetadata(),
+    )
+
+
+def main():
+    print("IntentusNet Walkthrough Demo\n")
+
+    # Create runtime (recording disabled for this demo)
+    runtime = IntentusRuntime(enable_recording=False)
+
+    # Register agents
+    runtime.register_agent(PrimarySearchAgent)
+    runtime.register_agent(FallbackSearchAgent)
+
+    # First request with FALLBACK strategy - primary fails, fallback succeeds
+    print("[Request 1 - Primary fails, fallback handles]")
+    envelope1 = create_envelope("SearchIntent", {"query": "test query"}, RoutingStrategy.FALLBACK)
+    response1 = runtime.router.route_intent(envelope1)
+    print(f"Status: {response1.status}, Agent: {response1.metadata.get('agent')}")
+    print(f"Result: {response1.payload}\n")
+
+    # Second request - primary succeeds
+    print("[Request 2 - Primary succeeds]")
+    envelope2 = create_envelope("SearchIntent", {"query": "another query"}, RoutingStrategy.FALLBACK)
+    response2 = runtime.router.route_intent(envelope2)
+    print(f"Status: {response2.status}, Agent: {response2.metadata.get('agent')}")
+    print(f"Result: {response2.payload}\n")
+
+
+if __name__ == "__main__":
+    main()
 ```
 
 ## Key Observations
 
 | Feature | What Happened |
 |---------|---------------|
-| Policy Filtering | CCTV was protected; 3 of 4 targets executed |
-| Partial Continuation | Intent succeeded for allowed targets |
-| Crash Detection | Execution log showed incomplete state |
-| Recovery | Resumed from crash point, skipped completed |
-| Replay | Returned exact recorded output |
+| Agent Registration | Agents registered via `runtime.register_agent()` |
+| Router API | `router.route_intent(envelope)` with explicit strategy |
+| Fallback Routing | `RoutingStrategy.FALLBACK` tried agents in priority order |
+| Deterministic Order | Agents sorted by `nodePriority` (lower = higher priority) |
+| Recording | Executions saved to `.intentusnet/records/` when enabled |
+
+## Execution Flow
+
+```
+router.route_intent(envelope)
+        │
+        │  envelope.routing.strategy = FALLBACK
+        │
+        ▼
+┌───────────────────────────┐
+│   IntentRouter            │  Finds agents by capability
+│                           │  Sorts by nodePriority
+└───────────┬───────────────┘
+            │
+            ▼
+┌───────────────────────────┐
+│   PrimarySearchAgent      │  Attempts first (priority=10)
+│   (nodePriority=10)       │  → Returns error
+└───────────┬───────────────┘
+            │ FALLBACK (strategy)
+            ▼
+┌───────────────────────────┐
+│   FallbackSearchAgent     │  Attempts second (priority=50)
+│   (nodePriority=50)       │  → Returns success
+└───────────┬───────────────┘
+            │
+            ▼
+      AgentResponse
+```
 
 ## Next Steps
 
