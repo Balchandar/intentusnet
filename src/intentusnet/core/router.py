@@ -23,6 +23,14 @@ from ..recording.models import ExecutionRecord
 from ..recording.recorder import InMemoryExecutionRecorder
 from ..recording.store import FileExecutionStore
 
+# Phase I REGULATED: Compliance integration
+from ..security.compliance import (
+    ComplianceConfig,
+    ComplianceValidator,
+    ComplianceLevel,
+    ComplianceError,
+)
+
 
 logger = logging.getLogger("intentusnet.router")
 
@@ -33,7 +41,15 @@ class IntentRouter:
 
     Recording rules:
     - Recording is passive and must NOT affect routing decisions.
-    - During replay, routing/model calls must not run (handled by ReplayEngine).
+    - Historical retrieval returns stored responses; no routing or model calls occur.
+
+    Determinism guarantees (Phase I):
+    - DIRECT, FALLBACK, BROADCAST: Deterministic agent selection given identical
+      (intent, agent registry, configuration). Same input -> same selection.
+    - PARALLEL: Explicitly NON-DETERMINISTIC. Winner depends on completion timing.
+      Blocked when require_determinism=True (default).
+
+    See: docs/phase-i-remediation-plan.md for claim boundaries.
     """
 
     def __init__(
@@ -43,12 +59,82 @@ class IntentRouter:
         trace_sink: Optional[TraceSink] = None,
         middlewares: Optional[list[RouterMiddleware]] = None,
         record_store: Optional[FileExecutionStore] = None,
+        require_determinism: bool = True,
+        compliance: Optional[ComplianceConfig] = None,
+        wal_signing_enabled: bool = False,
     ) -> None:
+        """
+        Initialize the intent router.
+
+        Args:
+            registry: Agent registry for agent lookup
+            trace_sink: Optional trace sink for observability
+            middlewares: Optional list of router middlewares
+            record_store: Optional execution record store
+            require_determinism: Whether to enforce deterministic routing (default True)
+            compliance: Optional compliance configuration (Phase I REGULATED)
+            wal_signing_enabled: Whether WAL signing is enabled (Phase I REGULATED)
+
+        Raises:
+            ComplianceError: If compliance requirements are not met
+        """
         self._registry = registry
         self._trace_sink = trace_sink or InMemoryTraceSink()
         self._middlewares: list[RouterMiddleware] = list(middlewares or [])
         self._record_store = record_store
+        self._require_determinism = require_determinism
+        self._config_hash: Optional[str] = None
         self._log = logger
+        self._compliance = compliance
+        self._wal_signing_enabled = wal_signing_enabled
+
+        # Phase I REGULATED: Validate compliance at startup
+        if compliance is not None:
+            self._validate_compliance(compliance, wal_signing_enabled)
+
+        # Compute config hash at init for drift detection
+        self._config_hash = self._compute_config_hash()
+
+    def _validate_compliance(
+        self,
+        compliance: ComplianceConfig,
+        wal_signing_enabled: bool,
+    ) -> None:
+        """
+        Validate that router configuration meets compliance requirements.
+
+        Phase I REGULATED mode requires:
+        - Deterministic routing (require_determinism=True)
+        - Signed WAL entries (wal_signing_enabled=True)
+
+        Args:
+            compliance: The compliance configuration
+            wal_signing_enabled: Whether WAL signing is enabled
+
+        Raises:
+            ComplianceError: If compliance requirements are not met
+        """
+        validator = ComplianceValidator(compliance)
+
+        # Check determinism requirement
+        validator.validate_router_config(self._require_determinism)
+
+        # Check WAL signing requirement
+        validator.validate_wal_signing(wal_signing_enabled)
+
+        # Log compliance level
+        self._log.info(
+            "Router initialized with %s compliance. "
+            "require_determinism=%s, wal_signing=%s",
+            compliance.level.value,
+            self._require_determinism,
+            wal_signing_enabled,
+        )
+
+    @property
+    def compliance_level(self) -> Optional[ComplianceLevel]:
+        """Get the compliance level of this router, or None if not configured."""
+        return self._compliance.level if self._compliance else None
 
     # ===========================================================
     # Public API
@@ -76,7 +162,12 @@ class IntentRouter:
                 env=env,
             )
             recorder = InMemoryExecutionRecorder(record)
-            recorder.record_event("INTENT_RECEIVED", {"traceId": trace_id, "intent": env.intent.name})
+            recorder.record_event("INTENT_RECEIVED", {
+                "traceId": trace_id,
+                "intent": env.intent.name,
+                "config_hash": self._config_hash,  # Phase I: Store for drift detection
+                "require_determinism": self._require_determinism,
+            })
 
         # ---- Middleware: before_route ----
         for m in self._middlewares:
@@ -107,6 +198,36 @@ class IntentRouter:
 
             # ---- Strategy resolution ----
             strategy = getattr(env.routing, "strategy", None) or RoutingStrategy.DIRECT
+
+            # ---- PARALLEL determinism enforcement (Phase I remediation) ----
+            # PARALLEL strategy is non-deterministic: winner depends on completion timing.
+            # Block it when require_determinism=True to prevent false compliance claims.
+            if strategy == RoutingStrategy.PARALLEL and self._require_determinism:
+                last_error = ErrorInfo(
+                    code=ErrorCode.VALIDATION_ERROR,
+                    message=(
+                        "PARALLEL routing strategy is non-deterministic. "
+                        "Winner selection depends on agent completion timing, not priority. "
+                        "To use PARALLEL, initialize router with require_determinism=False. "
+                        "This disqualifies the execution from determinism guarantees. "
+                        "For deterministic multi-agent execution, use FALLBACK or BROADCAST."
+                    ),
+                    retryable=False,
+                    details={
+                        "strategy": "PARALLEL",
+                        "require_determinism": True,
+                        "remediation": "Use require_determinism=False or change strategy",
+                    },
+                )
+                raise RoutingError(last_error.message)
+
+            # Log warning for PARALLEL even when allowed
+            if strategy == RoutingStrategy.PARALLEL:
+                self._log.warning(
+                    "PARALLEL strategy in use. Execution is NON-DETERMINISTIC. "
+                    "Winner depends on completion timing. trace_id=%s",
+                    trace_id,
+                )
 
             if strategy == RoutingStrategy.DIRECT:
                 agent = self._select_direct_agent(env, agents)
@@ -236,9 +357,59 @@ class IntentRouter:
         return response
 
     # ===========================================================
+    # Configuration Hash (for drift detection)
+    # ===========================================================
+    def _compute_config_hash(self) -> str:
+        """
+        Compute deterministic hash of router configuration.
+
+        Used for:
+        - Recording in WAL for drift detection during replay-diff
+        - Detecting when configuration changed between execution and analysis
+
+        Includes:
+        - Agent names and priorities (sorted for determinism)
+        - Require determinism flag
+        - Router version
+        """
+        import hashlib
+        import json
+
+        agent_configs = []
+        for name, agent in sorted(self._registry._agents.items()):
+            defn = agent.definition
+            agent_configs.append({
+                "name": defn.name,
+                "priority": getattr(defn, "nodePriority", 100),
+                "is_remote": bool(getattr(defn, "nodeId", None)),
+            })
+
+        config_data = {
+            "agents": agent_configs,
+            "require_determinism": self._require_determinism,
+            "version": "1.0",
+        }
+
+        encoded = json.dumps(config_data, sort_keys=True, separators=(",", ":"))
+        return hashlib.sha256(encoded.encode()).hexdigest()
+
+    # ===========================================================
     # Deterministic Sorting
     # ===========================================================
     def _sort_agents_for_strategy(self, agents: List[BaseAgent]) -> List[BaseAgent]:
+        """
+        Sort agents deterministically for routing.
+
+        Order: (is_remote ASC, nodePriority ASC, name ASC)
+
+        This ensures identical agent selection across:
+        - Different process restarts
+        - Different machines
+        - Replay-diff comparisons
+
+        CRITICAL: This sort MUST NOT depend on registration order, random values,
+        or any non-deterministic source.
+        """
         def key(agent: BaseAgent):
             d = agent.definition
             is_remote = 1 if getattr(d, "nodeId", None) else 0
@@ -399,6 +570,24 @@ class IntentRouter:
         strategy: RoutingStrategy,
         recorder: Optional[InMemoryExecutionRecorder],
     ) -> Tuple[AgentResponse, str, RouterDecision, Optional[ErrorInfo]]:
+        """
+        Execute agents in parallel, return first success.
+
+        WARNING: This strategy is EXPLICITLY NON-DETERMINISTIC.
+
+        The winner depends on:
+        - Thread scheduling by the OS
+        - Agent execution latency
+        - Network conditions (for remote agents)
+
+        Same input MAY produce different winners across runs.
+
+        This method should only be called when require_determinism=False.
+        The caller (route_intent) enforces this check.
+
+        Candidate list IS deterministic (same agents sorted the same way).
+        Winner selection IS NOT deterministic.
+        """
         last_error: Optional[ErrorInfo] = None
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=len(agents) or 1) as executor:

@@ -23,7 +23,7 @@ const sidebars: SidebarsConfig = {
       items: [
         'guarantees/deterministic-routing',
         'guarantees/crash-safe-execution',
-        'guarantees/replayability',
+        'guarantees/historical-retrieval',
         'guarantees/policy-filtering',
         'guarantees/observability-contract',
         'guarantees/limitations',
@@ -65,7 +65,7 @@ const sidebars: SidebarsConfig = {
       items: [
         'cli/run',
         'cli/inspect',
-        'cli/replay',
+        'cli/retrieve',
         'cli/estimate',
         'cli/validate',
       ],
@@ -78,7 +78,7 @@ const sidebars: SidebarsConfig = {
         'advanced/crash-safety-internals',
         'advanced/cost-estimation',
         'advanced/policy-design',
-        'advanced/replay-semantics',
+        'advanced/retrieval-semantics',
         'advanced/deterministic-routing-patterns',
       ],
     },

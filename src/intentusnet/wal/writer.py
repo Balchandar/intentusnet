@@ -1,11 +1,36 @@
 """
 WAL Writer - Append-only, crash-safe writer.
 
+Phase I Durability Boundary Definition
+======================================
+
+The IntentusNet durability guarantee begins at the WAL COMMIT BOUNDARY:
+
+    EXECUTION_STARTED written to WAL
+    +
+    fsync() returns successfully
+    =
+    COMMIT BOUNDARY (durability begins here)
+
+BEFORE the commit boundary:
+- Message loss IS possible
+- Caller may receive connection error, timeout, or no response
+- This is "pre-WAL loss" and is EXPECTED under chaos conditions
+- IntentusNet provides AT-MOST-ONCE delivery in this zone
+
+AFTER the commit boundary:
+- Message loss requires WAL corruption
+- WAL corruption IS DETECTABLE via hash chain verification
+- Recovery can identify and resume the execution
+- This is the "durable zone"
+
+See: docs/phase-i-remediation-plan.md Section 5
+
 Rules:
-- All writes are fsynced before returning
-- Hash chaining ensures integrity
-- No overwrites allowed
-- Thread-safe
+- All writes are fsynced before returning (CRITICAL for durability guarantee)
+- Hash chaining ensures integrity (detects tampering, corruption)
+- No overwrites allowed (append-only)
+- Thread-safe (concurrent recording supported)
 """
 
 from __future__ import annotations
@@ -18,7 +43,12 @@ from typing import Optional
 
 from intentusnet.utils.timestamps import now_iso
 
-from .models import WALEntry, WALEntryType, ExecutionState
+from .models import WALEntry, WALEntryType, ExecutionState, WALSigner, WALSignatureError
+
+
+class WALSigningError(RuntimeError):
+    """Raised when WAL signing fails or is required but not configured."""
+    pass
 
 
 class WALWriter:
@@ -26,12 +56,48 @@ class WALWriter:
     Append-only WAL writer with fsync guarantees.
 
     Thread-safe for concurrent execution recording.
+
+    Phase I REGULATED mode:
+    - If signer is provided, ALL entries are signed with Ed25519
+    - If require_signing=True and no signer, raises WALSigningError
+    - Signatures are stored in each WAL entry
     """
 
-    def __init__(self, wal_dir: str, execution_id: str) -> None:
+    def __init__(
+        self,
+        wal_dir: str,
+        execution_id: str,
+        *,
+        signer: Optional[WALSigner] = None,
+        require_signing: bool = False,
+    ) -> None:
+        """
+        Initialize WAL writer.
+
+        Args:
+            wal_dir: Directory to store WAL files
+            execution_id: Unique execution identifier
+            signer: Optional WALSigner for entry signing (Phase I REGULATED)
+            require_signing: If True, fail if signer is not provided
+
+        Raises:
+            WALSigningError: If require_signing=True but signer is None
+        """
+        # Phase I REGULATED: Enforce signing requirement
+        if require_signing and signer is None:
+            raise WALSigningError(
+                "WAL signing is required but no signer provided. "
+                "For REGULATED compliance, provide an Ed25519WALSigner. "
+                "See: docs/phase-i-remediation-plan.md Section 6"
+            )
+
         self.wal_dir = Path(wal_dir)
         self.execution_id = execution_id
         self.wal_path = self.wal_dir / f"{execution_id}.wal"
+
+        # Signing (Phase I REGULATED)
+        self._signer = signer
+        self._require_signing = require_signing
 
         # Thread safety
         self._lock = threading.Lock()
@@ -45,6 +111,16 @@ class WALWriter:
 
         # File handle (opened in append mode)
         self._file = None
+
+    @property
+    def is_signing_enabled(self) -> bool:
+        """Check if WAL signing is enabled."""
+        return self._signer is not None
+
+    @property
+    def signer_key_id(self) -> Optional[str]:
+        """Get the key ID of the signer, or None if signing disabled."""
+        return self._signer.key_id if self._signer else None
 
     def __enter__(self) -> WALWriter:
         self._file = open(self.wal_path, "a", encoding="utf-8")
@@ -79,6 +155,10 @@ class WALWriter:
             # Compute hash
             entry.entry_hash = entry.compute_hash()
 
+            # Sign entry if signer is configured (Phase I REGULATED)
+            if self._signer is not None:
+                entry.sign(self._signer)
+
             # Write to file (JSONL)
             if self._file is None:
                 raise RuntimeError("WAL writer not opened (use context manager)")
@@ -86,25 +166,66 @@ class WALWriter:
             line = json.dumps(entry.to_dict(), ensure_ascii=False)
             self._file.write(line + "\n")
             self._file.flush()
+
+            # ============================================================
+            # DURABILITY BOUNDARY: fsync() is the commit point.
+            # After fsync returns, the entry is durable.
+            # Before fsync returns, crash = entry may be lost.
+            # This is the ONLY point where durability is established.
+            # ============================================================
             os.fsync(self._file.fileno())
 
-            # Update chain
+            # Update chain (only after successful fsync)
             self._last_hash = entry.entry_hash
+
+            # Post-condition: Entry is now durable
+            assert self._last_hash == entry.entry_hash, "Hash chain inconsistency"
 
             return entry
 
-    def execution_started(self, envelope_hash: str, intent_name: str) -> WALEntry:
+    def execution_started(
+        self,
+        envelope_hash: str,
+        intent_name: str,
+        *,
+        config_hash: str = None,
+        require_determinism: bool = True,
+    ) -> WALEntry:
         """
         Write EXECUTION_STARTED entry.
+
+        ============================================================
+        THIS IS THE DURABILITY COMMIT BOUNDARY.
+        ============================================================
+
+        Once this method returns successfully:
+        - The execution IS durable (survives crash)
+        - Loss requires WAL corruption (detectable)
+        - Recovery can identify this execution
+
+        Before this method returns:
+        - The execution is NOT durable
+        - Process crash = message lost (pre-WAL loss)
+        - Caller may or may not receive error
+
+        Args:
+            envelope_hash: SHA256 hash of the intent envelope
+            intent_name: Name of the intent being executed
+            config_hash: Hash of router configuration (for drift detection)
+            require_determinism: Whether determinism mode is enabled
         """
-        return self.append(
-            WALEntryType.EXECUTION_STARTED,
-            {
-                "execution_id": self.execution_id,
-                "envelope_hash": envelope_hash,
-                "intent_name": intent_name,
-            },
-        )
+        payload = {
+            "execution_id": self.execution_id,
+            "envelope_hash": envelope_hash,
+            "intent_name": intent_name,
+        }
+
+        # Phase I: Include config hash for drift detection
+        if config_hash is not None:
+            payload["config_hash"] = config_hash
+            payload["require_determinism"] = require_determinism
+
+        return self.append(WALEntryType.EXECUTION_STARTED, payload)
 
     def execution_completed(self, response_hash: str) -> WALEntry:
         """

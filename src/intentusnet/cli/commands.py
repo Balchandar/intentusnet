@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from intentusnet.recording.store import FileExecutionStore
-from intentusnet.recording.replay import ReplayEngine
+from intentusnet.recording.replay import HistoricalResponseEngine
 from intentusnet.recording.diff import ExecutionDiffer
 from intentusnet.wal.reader import WALReader
 from intentusnet.wal.recovery import RecoveryManager
@@ -93,9 +93,16 @@ def diff_executions(args) -> None:
     _output_json(diff.to_dict())
 
 
-def replay_execution(args) -> None:
+def retrieve_execution(args) -> None:
     """
-    Replay an execution.
+    Retrieve the historical response from an execution record.
+
+    IMPORTANT: This is a LOOKUP operation, not re-execution.
+    The stored finalResponse is returned exactly as recorded.
+    No agent code is executed. No routing occurs.
+
+    For comparing current system behavior with historical executions,
+    use 'intentusnet timemachine diff' instead.
     """
     store = FileExecutionStore(args.record_dir)
 
@@ -105,27 +112,43 @@ def replay_execution(args) -> None:
         print(f"Error: Execution {args.execution_id} not found", file=sys.stderr)
         sys.exit(1)
 
-    engine = ReplayEngine(record)
-    ok, reason = engine.is_replayable()
+    engine = HistoricalResponseEngine(record)
+    ok, reason = engine.is_retrievable()
 
     if not ok:
-        print(f"Error: Execution is not replayable: {reason}", file=sys.stderr)
+        print(f"Error: Historical response not retrievable: {reason}", file=sys.stderr)
         sys.exit(1)
 
     if args.dry_run:
         _output_json({
             "dry_run": True,
             "execution_id": args.execution_id,
-            "replayable": True,
+            "retrievable": True,
             "response": record.finalResponse,
+            "warning": HistoricalResponseEngine.RETRIEVAL_WARNING,
         })
     else:
-        result = engine.replay()
+        result = engine.retrieve()
         _output_json({
             "execution_id": result.execution_id,
             "response": result.response,
             "envelope_hash_ok": result.envelope_hash_ok,
+            "retrieval_timestamp": result.retrieval_timestamp,
+            "warning": result.warning,
         })
+
+
+# Backward compatibility alias (deprecated)
+def replay_execution(args) -> None:
+    """DEPRECATED: Use retrieve_execution instead."""
+    import warnings
+    warnings.warn(
+        "'replay' command is deprecated. Use 'retrieve' instead. "
+        "'Replay' incorrectly implies re-execution; this is actually retrieval.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    retrieve_execution(args)
 
 
 def estimate_cost(args) -> None:
