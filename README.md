@@ -4,6 +4,25 @@
 
 **Deterministic • Transport-Agnostic • EMCL-Ready • MCP-Compatible**
 
+---
+
+## 🚀 Phase II Now Available
+
+Phase II adds enterprise-grade enforcement, federation, cryptographic proofs, and the Time Machine UI:
+
+| Feature | Description |
+|---------|-------------|
+| **Gateway Enforcement** | Gateway as root of trust with mandatory signing |
+| **Section Encryption** | EMCL section-level encryption with AAD binding |
+| **Federation** | Cross-gateway verification and attestations |
+| **Witness Gateways** | Independent verification with quorum enforcement |
+| **Merkle Batches** | Cryptographic batching with inclusion proofs |
+| **Transparency Logs** | Append-only public logs with signed checkpoints |
+| **Compliance** | Jurisdiction-based enforcement with proofs |
+| **Time Machine UI** | Read-only, verification-first execution inspection |
+
+📚 **Phase II Docs:** [docs/phase2/README.md](docs/phase2/README.md)
+
 IntentusNet is an open-source, language-agnostic **execution runtime for multi-agent and tool-driven systems**.
 It makes routing, fallback, and failure handling **deterministic, recorded, explainable, and production-operable**.
 
