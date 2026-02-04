@@ -1,0 +1,260 @@
+---
+sidebar_position: 4
+title: Historical Response Retrieval
+description: How IntentusNet returns stored responses without re-execution
+---
+
+# Historical Response Retrieval
+
+IntentusNet stores execution responses and allows retrieval without re-executing agents or calling models. This document explains retrieval semantics, what it does, and what it does not do.
+
+## The Guarantee
+
+```
+GUARANTEE: For an ExecutionRecord R with a stored finalResponse,
+           retrieve(R) returns the stored response exactly as recorded.
+           No agent code is executed. No routing occurs.
+```
+
+This means:
+- No model calls during retrieval
+- No agent code executed
+- No side effects triggered
+- Stored response returned exactly
+
+:::warning Important Clarification
+**"Retrieve" is NOT "Replay"**. The previous term "replay" incorrectly implied re-execution for validation. Retrieval is a **lookup operation** that returns stored data. It does not verify that the current system would produce the same result.
+:::
+
+## How Retrieval Works
+
+```python
+from intentusnet import HistoricalResponseEngine, FileExecutionStore
+
+# Load recorded execution
+store = FileExecutionStore(".intentusnet/records")
+record = store.load("exec-a1b2c3d4")
+
+# Create retrieval engine
+engine = HistoricalResponseEngine(record)
+
+# Check if retrievable
+is_ok, reason = engine.is_retrievable()
+if not is_ok:
+    print(f"Cannot retrieve: {reason}")
+else:
+    # Retrieve returns stored response
+    result = engine.retrieve()
+    # result.response == original execution's finalResponse
+    # result.warning explains this is retrieval, not re-execution
+```
+
+### HistoricalResponseEngine Behavior
+
+```python
+class HistoricalResponseEngine:
+    RETRIEVAL_WARNING = (
+        "This is the RECORDED response from execution time. "
+        "No agent code was executed. No routing occurred. "
+        "This is a historical lookup, NOT re-execution."
+    )
+
+    def is_retrievable(self) -> Tuple[bool, Optional[str]]:
+        """Check if this record has a stored response."""
+        if self.record.finalResponse is None:
+            return False, "execution_incomplete"
+        return True, None
+
+    def retrieve(self) -> RetrievalResult:
+        """Return stored response without re-execution."""
+        return RetrievalResult(
+            execution_id=self.record.header.executionId,
+            response=self.record.finalResponse,
+            warning=self.RETRIEVAL_WARNING,
+            retrieval_timestamp=now_iso()
+        )
+```
+
+## Retrieval vs. Re-Execution
+
+| Aspect | Retrieval | Re-Execution |
+|--------|-----------|--------------|
+| Agent code | Not called | Called |
+| Model API calls | None | Made |
+| Side effects | None | May occur |
+| Output | Stored response | May differ |
+| Latency | Minimal (disk read) | Full execution time |
+| Cost | None (no API calls) | API costs incurred |
+| Validates current behavior | **No** | Yes |
+
+## When Records Are Retrievable
+
+A record is retrievable when:
+
+1. Execution completed (successfully or with a captured error)
+2. `finalResponse` was recorded
+3. No internal failures during recording
+
+```json
+{
+  "header": {
+    "executionId": "exec-a1b2c3d4"
+  },
+  "finalResponse": {
+    "status": "success",
+    "payload": {...}
+  }
+}
+```
+
+## When Records Are NOT Retrievable
+
+| Condition | Reason |
+|-----------|--------|
+| Execution crashed mid-way | `execution_incomplete` |
+| Recording failed | `recording_failure` |
+| No finalResponse stored | `no_response` |
+
+```json
+{
+  "header": {
+    "executionId": "exec-e5f6g7h8"
+  },
+  "finalResponse": null
+}
+```
+
+## Retrieval Use Cases
+
+### 1. Debugging
+
+Retrieve exact output for debugging:
+
+```bash
+# User reports issue with execution
+$ intentusnet records show exec-a1b2c3d4
+
+# Retrieve to see exact stored response
+$ intentusnet retrieve exec-a1b2c3d4
+{
+  "execution_id": "exec-a1b2c3d4",
+  "response": {
+    "result": "the exact output that was recorded"
+  },
+  "warning": "This is the RECORDED response..."
+}
+```
+
+### 2. Auditing
+
+Demonstrate what was returned at a point in time:
+
+```python
+# Auditor asks: "What did the system return on Jan 15?"
+record = store.load("exec-a1b2c3d4")
+result = engine.retrieve()
+# result.response is exactly what was stored
+```
+
+### 3. Cost Avoidance
+
+Avoid redundant API calls by returning stored responses:
+
+```python
+# Check if we've seen this exact request before
+envelope_hash = compute_hash(envelope)
+existing = store.find_by_hash(envelope_hash)
+
+if existing and existing.finalResponse is not None:
+    # Return stored response, no API call
+    return HistoricalResponseEngine(existing).retrieve()
+else:
+    # New request, execute normally
+    return router.route_intent(envelope)
+```
+
+## Retrieval Output Format
+
+```python
+@dataclass
+class RetrievalResult:
+    execution_id: str           # Reference to original execution
+    response: Dict[str, Any]    # Stored response exactly
+    warning: str                # Mandatory clarification
+    envelope_hash_ok: bool      # Hash verification result
+    retrieval_timestamp: str    # When retrieval occurred
+```
+
+## CLI Retrieval
+
+```bash
+# Retrieve stored response
+$ intentusnet retrieve exec-a1b2c3d4
+{
+  "execution_id": "exec-a1b2c3d4",
+  "response": {...},
+  "warning": "This is the RECORDED response...",
+  "retrieval_timestamp": "2026-02-04T10:30:00Z"
+}
+
+# Dry run
+$ intentusnet retrieve exec-a1b2c3d4 --dry-run
+{
+  "dry_run": true,
+  "retrievable": true,
+  ...
+}
+```
+
+## Retrieval Guarantees Summary
+
+| Guarantee | Description |
+|-----------|-------------|
+| Output identity | Returns exactly what was stored |
+| No execution | No agent code runs |
+| No side effects | No external calls made |
+| Mandatory warning | Always includes clarification that this is retrieval |
+
+## Limitations
+
+### Retrieval Does Not Validate Current Behavior
+
+If you need to verify the current system produces the same result, use `intentusnet records diff` or execute the request again and compare.
+
+### Retrieval Cannot Fix Bad Records
+
+If the original execution had issues, retrieval returns those issues:
+
+```python
+# Original execution returned error
+record = store.load("exec-with-error")
+result = HistoricalResponseEngine(record).retrieve()
+# result.response contains the original error
+```
+
+### Time-Sensitive Data
+
+If original response included time-sensitive data:
+
+```python
+# Original response at t0: {"expires_at": "2024-01-16"}
+# Retrieval at t1 (after expiry): still returns {"expires_at": "2024-01-16"}
+```
+
+Retrieval returns what was stored, even if now stale.
+
+## Summary
+
+| Aspect | Behavior |
+|--------|----------|
+| Operation type | Lookup (not re-execution) |
+| Output | Stored response exactly |
+| Agent execution | None |
+| Model calls | None |
+| Side effects | None |
+| Warning | Always included |
+
+## Next Steps
+
+- [Retrieval Semantics (Advanced)](../advanced/retrieval-semantics) — Deep dive on retrieval internals
+- [CLI Retrieve Reference](../cli/retrieve) — Full CLI documentation

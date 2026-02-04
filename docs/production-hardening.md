@@ -2,11 +2,11 @@
 
 ## Overview
 
-IntentusNet v1 is production-hardened with operator-grade execution guarantees, crash safety, and deterministic replay.
+IntentusNet v1 is production-hardened with operator-grade execution guarantees, crash safety, and historical response retrieval.
 
 **Core Guarantees:**
 - ✅ Double execution is impossible (idempotency + locking)
-- ✅ Replay is deterministic or fails loudly
+- ✅ Historical responses retrievable without re-execution
 - ✅ WAL and Records are verifiably consistent
 - ✅ Kill -9 safe (WAL with fsync)
 - ✅ Explicit state machine (legal transitions only)
@@ -85,7 +85,7 @@ intentusnet execution abort <execution-id> [--reason "..."]
 
 ### 4. Agent Invocation Determinism Boundary
 
-**Purpose:** Ensure deterministic replay by tracking input/output hashes.
+**Purpose:** Ensure execution is recorded with verifiable input/output hashes.
 
 **What's tracked:**
 - Input hash (before agent invocation)
@@ -93,10 +93,10 @@ intentusnet execution abort <execution-id> [--reason "..."]
 - Agent version or digest
 - Invocation metadata
 
-**Replay verification:**
-- Input hash must match
-- Output hash must match
-- Agent version must match
+**Verification checks:**
+- Input hash must match recorded value
+- Output hash must match recorded value
+- Agent version must match recorded value
 
 **Violation handling:**
 - Policy: FAIL | WARN | RECORD_ONLY
@@ -108,7 +108,7 @@ intentusnet execution abort <execution-id> [--reason "..."]
 
 ### 5. Agent Version Pinning
 
-**Purpose:** Prevent replay divergence due to agent changes.
+**Purpose:** Track agent versions for audit and verification.
 
 **What's tracked:**
 - Agent name
@@ -116,9 +116,9 @@ intentusnet execution abort <execution-id> [--reason "..."]
 - Content digest (SHA-256 of agent code)
 - Metadata
 
-**Replay behavior:**
-- Version mismatch → fail replay
-- Digest mismatch → fail replay
+**Verification behavior:**
+- Version mismatch → detected during verification
+- Digest mismatch → detected during verification
 
 **CLI:**
 ```bash
@@ -298,15 +298,17 @@ intentusnet recovery resume <execution-id>
 intentusnet recovery abort <execution-id> --reason "..."
 ```
 
-### Replay Command
+### Retrieve Command
 
 ```bash
-# Replay execution
-intentusnet replay <execution-id>
+# Retrieve historical response (no re-execution)
+intentusnet retrieve <execution-id>
 
-# Dry run (no side effects)
-intentusnet replay <execution-id> --dry-run
+# Dry run (show what would be retrieved)
+intentusnet retrieve <execution-id> --dry-run
 ```
+
+**Note:** The `retrieve` command returns the stored response exactly as recorded. It does not re-execute agent code or validate that the current system would produce the same result.
 
 ### Contract Commands
 
@@ -481,14 +483,14 @@ intentusnet records verify <execution-id>
 rm .intentusnet/locks/<execution-id>.lock
 ```
 
-### Scenario 4: Replay Divergence
+### Scenario 4: Verification Divergence
 
 ```bash
-# Verify replay determinism
-intentusnet execution verify <execution-id> --replay
+# Verify execution integrity
+intentusnet execution verify <execution-id>
 
 # Check determinism policy
-# If FAIL mode, execution will fail on divergence
+# If FAIL mode, verification will fail on divergence
 ```
 
 ---
@@ -530,15 +532,15 @@ intentusnet recovery scan
 - fsync guarantees durability
 - Recovery reconstructs state from WAL
 
-**Deterministic Replay:**
+**Historical Response Retrieval:**
 - Input/output hashes tracked
 - Agent versions pinned
-- Replay follows recorded plan only
+- Retrieval returns stored response (no re-execution)
 
 **Fail Fast, Fail Loud:**
 - Illegal state transition → `IllegalStateTransitionError`
 - Contract violation → fail before execution
-- Determinism violation → fail replay (FAIL mode)
+- Determinism violation → fail verification (FAIL mode)
 - WAL corruption → fail immediately
 
 ---

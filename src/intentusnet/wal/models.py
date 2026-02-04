@@ -6,15 +6,62 @@ All WAL entries are versioned and include:
 - Hash chaining for integrity
 - Timestamp (ISO 8601)
 - Type classification
+
+Phase I REGULATED mode additions:
+- Ed25519 signature over entry_hash
+- Key ID for signature verification
+- Signature verification MUST pass in REGULATED mode
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, Optional, Literal
+from typing import Any, Dict, Optional, Literal, Protocol
 from enum import Enum
 import hashlib
 import json
+
+
+# ===========================================================================
+# Signing Protocol (Phase I REGULATED)
+# ===========================================================================
+
+class WALSigner(Protocol):
+    """
+    Protocol for WAL entry signing.
+
+    Implementations MUST:
+    - Use Ed25519 or equivalent (256-bit security)
+    - Return deterministic signatures for same input
+    - Provide key_id for verification lookup
+    """
+
+    @property
+    def key_id(self) -> str:
+        """Unique identifier for the signing key."""
+        ...
+
+    def sign(self, data: bytes) -> bytes:
+        """Sign data, return raw signature bytes."""
+        ...
+
+
+class WALVerifier(Protocol):
+    """
+    Protocol for WAL signature verification.
+
+    Implementations MUST:
+    - Support offline verification (no network required)
+    - Fail explicitly on invalid signatures
+    """
+
+    def verify(self, data: bytes, signature: bytes, key_id: str) -> bool:
+        """Verify signature. Returns True if valid, False if invalid."""
+        ...
+
+    def get_public_key(self, key_id: str) -> Optional[bytes]:
+        """Get public key for key_id. Returns None if not found."""
+        ...
 
 
 class WALEntryType(str, Enum):
@@ -113,6 +160,11 @@ class ExecutionState(str, Enum):
         return to_state in legal_transitions.get(from_state, set())
 
 
+class WALSignatureError(RuntimeError):
+    """Raised when WAL signature is invalid or missing in REGULATED mode."""
+    pass
+
+
 @dataclass
 class WALEntry:
     """
@@ -120,6 +172,11 @@ class WALEntry:
 
     All WAL entries are immutable once written.
     Hash chaining ensures integrity.
+
+    Phase I REGULATED mode:
+    - signature: Ed25519 signature over entry_hash (base64)
+    - signer_key_id: Key identifier for verification
+    Both MUST be present and valid in REGULATED mode.
     """
 
     # Core fields
@@ -135,8 +192,17 @@ class WALEntry:
     prev_hash: Optional[str] = None  # Hash of previous entry (chain)
     entry_hash: Optional[str] = None  # Hash of this entry
 
+    # Signature (Phase I REGULATED)
+    signature: Optional[str] = None  # Base64-encoded Ed25519 signature
+    signer_key_id: Optional[str] = None  # Key identifier for verification
+
     # Metadata
     version: str = "1.0"  # WAL schema version
+
+    @property
+    def is_signed(self) -> bool:
+        """Check if entry has signature fields populated."""
+        return self.signature is not None and self.signer_key_id is not None
 
     def compute_hash(self) -> str:
         """
@@ -158,8 +224,9 @@ class WALEntry:
     def to_dict(self) -> Dict[str, Any]:
         """
         Serialize to JSON-compatible dict.
+        Includes signature fields if present (Phase I REGULATED).
         """
-        return {
+        result = {
             "seq": self.seq,
             "execution_id": self.execution_id,
             "timestamp_iso": self.timestamp_iso,
@@ -170,10 +237,19 @@ class WALEntry:
             "version": self.version,
         }
 
+        # Include signature fields only if present (Phase I REGULATED)
+        if self.signature is not None:
+            result["signature"] = self.signature
+        if self.signer_key_id is not None:
+            result["signer_key_id"] = self.signer_key_id
+
+        return result
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> WALEntry:
         """
         Deserialize from JSON.
+        Handles both signed and unsigned entries.
         """
         return cls(
             seq=data["seq"],
@@ -183,7 +259,66 @@ class WALEntry:
             payload=data["payload"],
             prev_hash=data.get("prev_hash"),
             entry_hash=data.get("entry_hash"),
+            signature=data.get("signature"),  # Phase I REGULATED
+            signer_key_id=data.get("signer_key_id"),  # Phase I REGULATED
             version=data.get("version", "1.0"),
+        )
+
+    def sign(self, signer: "WALSigner") -> None:
+        """
+        Sign this entry using the provided signer.
+
+        MUST be called after compute_hash().
+        Sets signature and signer_key_id fields.
+
+        Args:
+            signer: WALSigner implementation (Ed25519)
+
+        Raises:
+            ValueError: If entry_hash is not set
+        """
+        if not self.entry_hash:
+            raise ValueError("Cannot sign entry without entry_hash. Call compute_hash() first.")
+
+        signature_bytes = signer.sign(self.entry_hash.encode("utf-8"))
+        import base64
+        self.signature = base64.b64encode(signature_bytes).decode("ascii")
+        self.signer_key_id = signer.key_id
+
+    def verify_signature(self, verifier: "WALVerifier") -> bool:
+        """
+        Verify this entry's signature.
+
+        Args:
+            verifier: WALVerifier implementation
+
+        Returns:
+            True if signature is valid, False otherwise
+
+        Raises:
+            WALSignatureError: If signature fields are missing
+        """
+        if not self.is_signed:
+            raise WALSignatureError(
+                f"Entry seq={self.seq} is not signed. "
+                "Signature verification requires signature and signer_key_id."
+            )
+
+        if not self.entry_hash:
+            raise WALSignatureError(
+                f"Entry seq={self.seq} has no entry_hash. Cannot verify signature."
+            )
+
+        import base64
+        try:
+            signature_bytes = base64.b64decode(self.signature)
+        except Exception as e:
+            raise WALSignatureError(f"Invalid signature encoding: {e}")
+
+        return verifier.verify(
+            self.entry_hash.encode("utf-8"),
+            signature_bytes,
+            self.signer_key_id
         )
 
 

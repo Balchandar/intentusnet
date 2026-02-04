@@ -12,14 +12,15 @@ IntentusNet provides explicit, documented guarantees for production multi-agent 
 
 Every production runtime needs a clear contract. IntentusNet's contract is:
 
-| Guarantee                   | Status                | Description                                            |
-| --------------------------- | --------------------- | ------------------------------------------------------ |
-| Deterministic Routing       | **Provided**          | Same input → same agent selection order                |
-| Execution Recording         | **Provided**          | Every execution captured with stable hash              |
-| Replay Without Re-execution | **Provided**          | Return recorded output, no model calls                 |
-| Policy Filtering            | **Provided**          | Partial allow/deny with continuation                   |
-| Structured Errors           | **Provided**          | Typed error codes, no silent failures                  |
-| Crash Recovery              | **Provided (v1.3.0)** | WAL-backed execution state with deterministic recovery |
+| Guarantee                    | Status                | Description                                            |
+| ---------------------------- | --------------------- | ------------------------------------------------------ |
+| Deterministic Routing        | **Provided**          | Same input → same agent selection order                |
+| Execution Recording          | **Provided**          | Every execution captured with stable hash              |
+| Historical Response Retrieval| **Provided**          | Return stored response, no model re-execution          |
+| Policy Filtering             | **Provided**          | Partial allow/deny with continuation                   |
+| Structured Errors            | **Provided**          | Typed error codes, no silent failures                  |
+| Crash Recovery               | **Provided**          | WAL-backed execution state with recovery               |
+| Signed WAL (REGULATED)       | **Provided**          | Ed25519 per-entry signatures for audit trail           |
 
 :::note Design Goals vs. Implemented Guarantees
 Features marked as "Design Goal" are architecturally planned but may have implementation limitations in the current version. See individual guarantee pages for details.
@@ -33,10 +34,11 @@ Features marked as "Design Goal" are architecturally planned but may have implem
 ✓ Deterministic agent ordering
 ✓ Single response per intent
 ✓ Execution recording with stable hashes
-✓ Replay returns recorded outputs
+✓ Historical response retrieval (stored response returned)
 ✓ Typed error codes (ErrorCode enum)
 ✓ Trace span emission for every decision
 ✓ Policy allow/deny evaluation
+✓ Signed WAL entries (REGULATED mode)
 ```
 
 ### What is NOT Guaranteed
@@ -74,16 +76,18 @@ IntentusNet guarantees **complete execution capture**:
 
 [Read more: Crash-Safe Execution →](./crash-safe-execution)
 
-### 3. Replay Guarantees
+### 3. Historical Response Retrieval
 
-IntentusNet guarantees **deterministic replay**:
+IntentusNet provides **historical response retrieval**:
 
-- Replay returns the recorded output, not a re-execution
-- No model calls during replay
+- Retrieval returns the stored response, not a re-execution
+- No model calls during retrieval
+- No agent code executed
 - Envelope hash validation available
-- Explicit `replayable` flag on records
 
-[Read more: Replayability →](./replayability)
+**Important:** "Retrieve" is a lookup operation. It does not validate that the current system would produce the same result.
+
+[Read more: Historical Response Retrieval →](./historical-retrieval)
 
 ### 4. Policy Guarantees
 
@@ -116,19 +120,19 @@ IntentusNet makes failure modes explicit:
 | No matching agent   | `CAPABILITY_NOT_FOUND` error     | Register appropriate agent   |
 | Agent error         | Error propagated, recorded       | Retry with fallback strategy |
 | Policy denial       | Partial execution or full denial | Adjust policy rules          |
-| Crash mid-execution | Recorded events preserved        | Replay from last checkpoint  |
+| Crash mid-execution | Recorded events preserved        | Recovery via WAL             |
 | Invalid envelope    | `VALIDATION_ERROR`               | Fix envelope structure       |
 
 ## Guarantee Versions
 
 Guarantees may evolve across versions:
 
-| Version         | Key Guarantees Added                |
-| --------------- | ----------------------------------- |
-| 0.1.x           | Basic routing, registry             |
-| 0.2.x           | Execution recording, trace spans    |
-| 0.3.x           | Replay engine, stable hashes        |
-| 0.4.x (planned) | Enhanced WAL, distributed recording |
+| Version         | Key Guarantees Added                           |
+| --------------- | ---------------------------------------------- |
+| 0.1.x           | Basic routing, registry                        |
+| 0.2.x           | Execution recording, trace spans               |
+| 0.3.x           | Historical response retrieval, stable hashes   |
+| 1.0.x           | WAL signing, compliance modes (Phase I)        |
 
 ## Verifying Guarantees
 
@@ -136,6 +140,7 @@ You can verify IntentusNet's guarantees programmatically:
 
 ```python
 from intentusnet import IntentusRuntime, IntentEnvelope
+from intentusnet.recording import HistoricalResponseEngine, FileExecutionStore
 
 runtime = IntentusRuntime(enable_recording=True)
 
@@ -151,9 +156,12 @@ assert len(agents) == 1, "Routing is non-deterministic"
 execution_id = results[0].metadata.get('execution_id')
 assert execution_id is not None, "Execution not recorded"
 
-# Verify replay
-replay_result = runtime.replay(execution_id)
-assert replay_result.payload == results[0].payload, "Replay mismatch"
+# Verify retrieval returns stored response
+store = FileExecutionStore(".intentusnet/records")
+record = store.load(execution_id)
+engine = HistoricalResponseEngine(record)
+result = engine.retrieve()
+# Note: result.response is the stored response, not a re-execution
 ```
 
 ## Next Steps
@@ -162,7 +170,7 @@ Explore each guarantee in detail:
 
 - [Deterministic Routing](./deterministic-routing) — How agent selection works
 - [Crash-Safe Execution](./crash-safe-execution) — Execution recording and recovery
-- [Replayability](./replayability) — Replay semantics and safety
+- [Historical Response Retrieval](./historical-retrieval) — Retrieval semantics and behavior
 - [Policy Filtering](./policy-filtering) — Allow/deny with partial continuation
 - [Observability Contract](./observability-contract) — Structured output guarantees
 - [Limitations](./limitations) — Explicit non-goals and limitations

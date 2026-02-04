@@ -1,0 +1,154 @@
+---
+sidebar_position: 4
+title: intentusnet retrieve
+description: Retrieve historical responses from execution records via the CLI
+---
+
+# intentusnet retrieve
+
+Retrieve the stored response from a recorded execution. This is a **lookup operation**, not re-execution—no agent code runs, no routing occurs.
+
+:::info Important Semantic Note
+The `retrieve` command returns the stored `finalResponse` exactly as recorded. It does not re-execute agent code or validate that the current system would produce the same result.
+:::
+
+## Synopsis
+
+```bash
+intentusnet retrieve <execution_id> [options]
+```
+
+## Options
+
+| Option | Description |
+|--------|-------------|
+| `--dry-run` | Show what would be retrieved without returning full response |
+| `--output FILE` | Write result to file |
+
+## Examples
+
+### Basic Retrieval
+
+```bash
+intentusnet retrieve exec-a1b2c3d4
+```
+
+Output:
+
+```json
+{
+  "execution_id": "exec-a1b2c3d4",
+  "response": {
+    "status": "success",
+    "payload": {
+      "result": "processed",
+      "data": "original output"
+    }
+  },
+  "envelope_hash_ok": true,
+  "retrieval_timestamp": "2026-02-04T10:30:00.123456Z",
+  "warning": "This is the RECORDED response from execution time. No agent code was executed. No routing occurred. This is a historical lookup, NOT re-execution."
+}
+```
+
+### Dry Run
+
+Check if a response is retrievable without returning the full response:
+
+```bash
+intentusnet retrieve exec-a1b2c3d4 --dry-run
+```
+
+```json
+{
+  "dry_run": true,
+  "execution_id": "exec-a1b2c3d4",
+  "retrievable": true,
+  "response": {...},
+  "warning": "This is the RECORDED response from execution time..."
+}
+```
+
+### Write to File
+
+```bash
+intentusnet retrieve exec-a1b2c3d4 --output result.json
+```
+
+## Non-Retrievable Records
+
+When a record does not have a stored response:
+
+```bash
+intentusnet retrieve exec-incomplete
+```
+
+```
+Error: Historical response not retrievable: execution_incomplete
+```
+
+Exit code: `1`
+
+## Use Cases
+
+### Debugging
+
+Retrieve exact output for debugging:
+
+```bash
+# User reports issue
+intentusnet retrieve exec-a1b2c3d4 > debug_output.json
+```
+
+### Auditing
+
+Demonstrate what was returned at a point in time:
+
+```bash
+# Auditor request
+intentusnet retrieve exec-a1b2c3d4 --output audit_record.json
+```
+
+### Cost Avoidance
+
+Return stored response instead of re-executing expensive operations:
+
+```bash
+# Check if already executed
+EXISTING=$(intentusnet records list --output json | jq -r '.[0].execution_id')
+
+if [ -n "$EXISTING" ]; then
+    # Retrieve stored response
+    intentusnet retrieve $EXISTING
+else
+    # Execute new
+    intentusnet run --intent ExpensiveIntent --payload @data.json
+fi
+```
+
+## Deprecated: replay Command
+
+The `replay` command is deprecated. Use `retrieve` instead.
+
+```bash
+# Deprecated (emits warning)
+intentusnet replay exec-a1b2c3d4
+
+# Preferred
+intentusnet retrieve exec-a1b2c3d4
+```
+
+The terminology change reflects the actual behavior: this is **retrieval** (lookup of stored data), not **replay** (which incorrectly implies re-execution).
+
+## Exit Codes
+
+| Code | Meaning |
+|------|---------|
+| 0 | Success |
+| 1 | General error / not retrievable |
+| 10 | Record not found |
+
+## See Also
+
+- [`intentusnet records`](./inspect) — View execution record details
+- [Historical Response Retrieval](../guarantees/historical-retrieval) — Retrieval semantics

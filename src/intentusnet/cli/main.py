@@ -33,7 +33,8 @@ from .record_commands import (
     records_gc,
 )
 from .commands import (
-    replay_execution,
+    retrieve_execution,
+    replay_execution,  # Deprecated, kept for backward compatibility
     scan_recovery,
     resume_execution,
     abort_execution as recovery_abort,
@@ -172,11 +173,24 @@ def create_parser() -> argparse.ArgumentParser:
     gc_parser.add_argument("--older-than", type=int, default=30, help="Days (default: 30)")
 
     # ========================================================================
-    # REPLAY COMMAND
+    # RETRIEVE COMMAND (Phase I corrected terminology)
     # ========================================================================
-    replay_parser = subparsers.add_parser("replay", help="Replay an execution")
+    retrieve_parser = subparsers.add_parser(
+        "retrieve",
+        help="Retrieve historical response from execution record (lookup, not re-execution)"
+    )
+    retrieve_parser.add_argument("execution_id", help="Execution ID")
+    retrieve_parser.add_argument("--dry-run", action="store_true", help="Show what would be retrieved")
+
+    # ========================================================================
+    # REPLAY COMMAND (DEPRECATED - kept for backward compatibility)
+    # ========================================================================
+    replay_parser = subparsers.add_parser(
+        "replay",
+        help="[DEPRECATED: use 'retrieve'] Retrieve historical response"
+    )
     replay_parser.add_argument("execution_id", help="Execution ID")
-    replay_parser.add_argument("--dry-run", action="store_true", help="Dry run (no side effects)")
+    replay_parser.add_argument("--dry-run", action="store_true", help="Dry run")
 
     # ========================================================================
     # RECOVERY COMMANDS
@@ -308,7 +322,11 @@ def main() -> None:
             elif args.subcommand == "gc":
                 records_gc(args)
 
+        elif args.command == "retrieve":
+            retrieve_execution(args)
+
         elif args.command == "replay":
+            # DEPRECATED: Calls retrieve_execution with deprecation warning
             replay_execution(args)
 
         elif args.command == "recovery":

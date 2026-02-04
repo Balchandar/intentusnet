@@ -2,14 +2,14 @@
 
 ## Overview
 
-The Runtime Determinism Core makes IntentusNet a **crash-safe, replayable, contract-enforced, operator-trustworthy execution runtime** for debuggable LLM + tool workflows.
+The Runtime Determinism Core makes IntentusNet a **crash-safe, recorded, contract-enforced, operator-trustworthy execution runtime** for debuggable LLM + tool workflows.
 
 After any execution, the runtime can answer:
 - **What happened?** (complete execution trace)
 - **Why was this path chosen?** (deterministic routing decisions)
 - **What fallback occurred?** (recorded fallback chain)
 - **Is it safe to retry?** (side-effect classification)
-- **Can this execution be replayed?** (deterministic replay)
+- **Can this response be retrieved?** (historical response retrieval)
 
 ## Core Components
 
@@ -165,7 +165,7 @@ Every step MUST declare its side-effect class:
 
 ```python
 class SideEffectClass(Enum):
-    READ_ONLY = "read_only"        # No state changes (safe to replay)
+    READ_ONLY = "read_only"        # No state changes (safe to retry)
     REVERSIBLE = "reversible"      # Changes can be undone (retry allowed)
     IRREVERSIBLE = "irreversible"  # Cannot be undone (NO retry)
 ```
@@ -173,8 +173,7 @@ class SideEffectClass(Enum):
 #### Rules
 
 - **`read_only`:**
-  - Safe to replay
-  - Retry allowed
+  - Safe to retry
   - Fallback allowed
 
 - **`reversible`:**
@@ -273,30 +272,32 @@ If `estimated_cost > budget_limit`, execution **fails before starting**.
 intentusnet estimate intent.json --budget 100
 ```
 
-### 7. Deterministic Replay
+### 7. Historical Response Retrieval
 
 **Location:** `src/intentusnet/recording/replay.py`
 
-Replay follows **recorded plan only** (no re-planning):
+Historical response retrieval returns the **stored response** without re-executing any agent code:
 
-#### Replay Rules
+#### Retrieval Semantics
 
-- ✅ Replay uses **recorded output** (no re-execution)
-- ✅ Irreversible steps **never re-execute**
-- ✅ Divergence → **hard failure**
-- ✅ `--dry-run` produces **zero side effects**
+- ✅ Returns **stored finalResponse** (no re-execution)
+- ✅ No agent code is executed
+- ✅ No routing logic runs
+- ✅ Mandatory warning clarifies this is retrieval, not re-execution
+
+**Important:** "Retrieve" returns the stored response exactly as recorded. It does not re-execute agent code or validate that the current system would produce the same result.
 
 #### CLI
 
 ```bash
-# Replay execution
-intentusnet replay <execution-id>
+# Retrieve historical response
+intentusnet retrieve <execution-id>
 
-# Dry run (no side effects)
-intentusnet replay <execution-id> --dry-run
+# Dry run (show what would be retrieved)
+intentusnet retrieve <execution-id> --dry-run
 
-# Diff executions
-intentusnet executions diff <id1> <id2>
+# Diff two execution records
+intentusnet records diff <id1> <id2>
 ```
 
 ### 8. CLI Inspection
@@ -306,23 +307,23 @@ intentusnet executions diff <id1> <id2>
 All CLI commands output **JSON/JSONL** (grep/jq friendly):
 
 ```bash
-# List all executions
-intentusnet executions list
+# List all execution records
+intentusnet records list
 
-# Show execution details
-intentusnet executions show <execution-id>
+# Show record details
+intentusnet records show <execution-id>
 
 # Show execution trace (WAL)
-intentusnet executions trace <execution-id>
+intentusnet wal inspect <execution-id>
 
-# Diff two executions
-intentusnet executions diff <id1> <id2>
+# Diff two execution records
+intentusnet records diff <id1> <id2>
 
-# Replay execution
-intentusnet replay <execution-id> [--dry-run]
+# Retrieve historical response (no re-execution)
+intentusnet retrieve <execution-id> [--dry-run]
 
 # Estimate cost
-intentusnet estimate intent.json [--budget 100]
+intentusnet cost estimate intent.json [--budget 100]
 
 # Recovery
 intentusnet recovery scan

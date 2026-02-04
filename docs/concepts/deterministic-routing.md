@@ -89,6 +89,8 @@ Deterministic ordering applies to **all routing strategies**.
 
 Even in parallel routing, **candidate selection is deterministic**.
 
+**Important (Phase I):** PARALLEL strategy is explicitly **non-deterministic** because the winner depends on completion timing. When `require_determinism=True` (the default), PARALLEL is **blocked** and will raise an error. Use FALLBACK for deterministic multi-agent execution.
+
 ---
 
 ## What Determinism Does NOT Mean
