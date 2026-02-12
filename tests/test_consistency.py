@@ -9,7 +9,7 @@ import pytest
 
 from intentusnet.wal import WALWriter
 from intentusnet.recording.store import FileExecutionStore
-from intentusnet.recording.models import ExecutionRecord, ExecutionHeader
+from intentusnet.recording.models import ExecutionRecord, ExecutionHeader, ExecutionEvent
 from intentusnet.recording.consistency import ConsistencyChecker
 from intentusnet.utils.timestamps import now_iso
 
@@ -37,13 +37,18 @@ class TestConsistency:
             wal.step_completed("step1", "output_hash", True)
             wal.execution_completed("response_hash")
 
-        # Create matching record
+        # Create matching record with corresponding events
         record = ExecutionRecord.new(
             execution_id=execution_id,
             created_utc_iso=now_iso(),
             env={"intent": {"name": "test_intent"}},
         )
         record.header.envelopeHash = envelope_hash
+        record.events.append(ExecutionEvent(
+            seq=1,
+            type="AGENT_ATTEMPT_END",
+            payload={"step_id": "step1", "status": "ok"},
+        ))
 
         store = FileExecutionStore(self.record_dir)
         store.save(record)

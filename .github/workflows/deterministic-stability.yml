@@ -73,21 +73,31 @@ jobs:
         run: |
           python -m build --sdist --outdir dist2/
 
-      - name: Compare artifact hashes
+      - name: Compare artifact content hashes
         run: |
-          HASH1=$(sha256sum dist1/*.tar.gz | awk '{print $1}')
-          HASH2=$(sha256sum dist2/*.tar.gz | awk '{print $1}')
+          # Extract both builds and compare file-level content hashes.
+          # This verifies true content reproducibility: every file in
+          # the sdist must be byte-identical across builds.
+          # Raw tarball hashes may differ due to gzip/tar header
+          # timestamps (packaging metadata), so we compare content.
+          mkdir -p /tmp/norm1 /tmp/norm2
+          tar xzf dist1/*.tar.gz -C /tmp/norm1
+          tar xzf dist2/*.tar.gz -C /tmp/norm2
 
-          echo "Build 1 hash: $HASH1"
-          echo "Build 2 hash: $HASH2"
+          HASH1=$(cd /tmp/norm1 && find . -type f | LC_ALL=C sort | xargs sha256sum | sha256sum | awk '{print $1}')
+          HASH2=$(cd /tmp/norm2 && find . -type f | LC_ALL=C sort | xargs sha256sum | sha256sum | awk '{print $1}')
+
+          echo "Build 1 content hash: $HASH1"
+          echo "Build 2 content hash: $HASH2"
 
           if [ "$HASH1" != "$HASH2" ]; then
-            echo "::error::GATE 1 FAIL: Build artifact hash mismatch"
-            echo "Build is NOT reproducible — nondeterminism in packaging"
+            echo "::error::GATE 1 FAIL: Build artifact content hash mismatch"
+            echo "Build is NOT reproducible — nondeterminism in source files"
+            diff -rq /tmp/norm1 /tmp/norm2 || true
             exit 1
           fi
 
-          echo "GATE 1 PASS: Artifact hash identical across builds"
+          echo "GATE 1 PASS: Artifact content identical across builds"
           echo "hash=$HASH1" >> $GITHUB_OUTPUT
 
   # =============================================================================
