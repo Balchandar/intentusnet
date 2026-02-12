@@ -1,0 +1,86 @@
+---
+sidebar_position: 1
+title: "v4.5 — Provable Determinism"
+description: "Release notes for IntentusNet v4.5"
+---
+
+# IntentusNet v4.5 — Provable Determinism
+
+**Released:** 2026-02-12
+
+## Summary
+
+IntentusNet v4.5 introduces **provable determinism** — execution behavior can now be cryptographically verified, drift-detected, and CI-enforced. Determinism is no longer just a design property; it is a measurable, enforceable guarantee.
+
+## New Features
+
+### Execution Fingerprinting
+
+Every execution produces a **SHA-256 fingerprint** computed from the intent sequence, agent call sequence, parameter hashes, output hashes, retry pattern, execution order, and timeout values.
+
+- Same input + same runtime = same fingerprint
+- Fingerprint mismatch = nondeterminism detected
+
+### Deterministic-Safe CI/CD Pipeline
+
+A 9-gate verification pipeline enforces determinism before deployment:
+
+| Gate | Purpose |
+|------|---------|
+| Build Reproducibility | Same source → same binary SHA-256 |
+| Deterministic Execution | Same input → same fingerprint across N runs |
+| WAL Replay Final-State | Replayed response hash matches original |
+| Entropy Detection | Static scan blocks unseeded randomness |
+| Container Reproducibility | Same Dockerfile → same image hash |
+| Routing Determinism | Same capabilities → same agent selection |
+| Crash Recovery | Side-effect-aware resume/block decisions |
+| WAL Integrity & Tamper | Hash chain + Ed25519 signature verification |
+| Runtime Snapshot | Serialization round-trip integrity |
+
+All 9 gates must pass. A single failure blocks deployment.
+
+### Drift Detection
+
+Automatic detection of nondeterministic execution through fingerprint comparison across runs.
+
+### WAL Replay Verification
+
+Stored responses can be proven to match original execution by comparing content hashes.
+
+### Entropy Scanning
+
+Static analysis gate scans deterministic-critical code paths for unseeded randomness, `uuid4()` in step IDs, `time()` in hashes, and `os.urandom()` in hash computation.
+
+### Project Blackbox Demo
+
+An 8-act end-to-end demonstration proving all deterministic guarantees. See [Project Blackbox](../demos/project-blackbox).
+
+## New CI Gate Scripts
+
+| Script | Gate |
+|--------|------|
+| `gate_deterministic_execution.py` | Evaluation report thresholds |
+| `gate_wal_replay_state.py` | WAL replay hash verification |
+| `gate_entropy_detection.py` | Static entropy scanning |
+| `gate_routing_determinism.py` | Agent selection determinism |
+| `gate_crash_recovery.py` | Recovery decision correctness |
+| `gate_wal_integrity.py` | Hash chain and signature verification |
+| `gate_runtime_snapshot.py` | Serialization round-trip verification |
+
+## Updated Guarantees
+
+Three new guarantees added to the execution contract:
+
+| Guarantee | Status |
+|-----------|--------|
+| Execution Fingerprinting | **Provided (v4.5)** |
+| Deterministic-Safe CI/CD | **Provided (v4.5)** |
+| Drift Detection | **Provided (v4.5)** |
+
+## Breaking Changes
+
+None. v4.5 is fully backward-compatible with v4.x.
+
+## Migration
+
+No migration required. New features are additive.

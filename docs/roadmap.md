@@ -9,50 +9,71 @@ Anything not marked as released should be considered **non-committal**.
 
 ## Released
 
-### v1.0.0 — Stable (Current)
+### v4.5.0 — Provable Determinism (Current)
 
-IntentusNet v1.0.0 provides:
+IntentusNet v4.5 introduces provable determinism:
+
+- Execution fingerprinting (SHA-256)
+- Deterministic-safe CI/CD (9-gate verification pipeline)
+- Drift detection (automatic nondeterminism identification)
+- WAL replay verification
+- Entropy scanning (static analysis gate)
+- Project Blackbox demo (8-act end-to-end proof)
+- Enterprise features (gateway enforcement, federation, Time Machine UI)
+
+See [release-notes/v4.5.md](release-notes/v4.5.md) for full details.
+
+### v4.0 — Enterprise & Deterministic Runtime
+
+IntentusNet v4.0 provides:
 
 - Deterministic intent routing
 - Explicit routing strategies (DIRECT, FALLBACK, BROADCAST, PARALLEL)
 - Synchronous, bounded execution
 - Agent programming model
 - Transport abstraction (in-process, HTTP, WebSocket, ZeroMQ)
-- Optional EMCL payload encryption
-- Minimal traceability
+- WAL-backed crash recovery with hash chaining
+- Execution recording and historical response retrieval
+- Ed25519 signed WAL (REGULATED mode)
+- EMCL payload encryption (AES-256-GCM)
+- Compliance modes (DEVELOPMENT, STANDARD, REGULATED)
+- Execution contracts and typed failures
 - MCP adapter
-- Complete, frozen documentation
-
-This release is **feature-frozen** except for bug fixes.
+- Enterprise gateway enforcement and federation
+- CLI tooling
 
 ---
 
-## Near-Term (v1.x)
+## Near-Term (v4.x)
 
-The following may be considered for v1.x **without breaking guarantees**:
+The following may be considered for v4.x **without breaking guarantees**:
 
 - Bug fixes and correctness improvements
 - Documentation clarifications
 - Performance tuning without semantic change
-- Additional examples or demos
+- Additional CI gate scripts
 - Minor API ergonomics (non-breaking only)
 
-No new routing semantics will be introduced in v1.x.
+No new routing semantics will be introduced in v4.x.
 
 ---
 
-## Under Exploration (v2 Candidates)
+## Under Exploration (v5 Candidates)
 
 The following ideas are being explored but **not committed**:
 
-- Async / await–based routing engine
+- Python ergonomic SDK (decorators, auto-registration)
+- C# SDK
+- TypeScript SDK
+- Async / await-based routing engine
+- MCP adapter improvements
+- EMCL key rotation
 - Structured retry and backoff policies
 - Timeouts and cancellation semantics
 - Richer trace hierarchies
 - Policy hooks and authorization layers
 - Pluggable scheduling strategies
 - Stronger EMCL identity validation
-- Language-native runtimes (TypeScript, C#)
 
 These items require design RFCs.
 
@@ -68,7 +89,7 @@ The following are **not goals** for IntentusNet:
 - Providing a full observability stack
 - Owning key management or auth
 
-IntentusNet remains a routing runtime.
+IntentusNet remains a deterministic execution runtime.
 
 ---
 
@@ -87,7 +108,7 @@ Roadmap changes follow these rules:
 
 Contributors should:
 
-- Align proposals with IntentusNet’s deterministic philosophy
+- Align proposals with IntentusNet's deterministic philosophy
 - Avoid feature creep
 - Prefer explicit over automatic behavior
 - Respect version boundaries

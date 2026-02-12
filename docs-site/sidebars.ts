@@ -104,6 +104,7 @@ const sidebars: SidebarsConfig = {
         'demos/dangerous-target-filtering',
         'demos/crash-recovery',
         'demos/model-swap-prevention',
+        'demos/project-blackbox',
       ],
     },
     {
@@ -124,6 +125,14 @@ const sidebars: SidebarsConfig = {
         'production/security',
         'production/operations',
         'production/limitations',
+      ],
+    },
+    {
+      type: 'category',
+      label: 'Release Notes',
+      collapsed: true,
+      items: [
+        'release-notes/v4-5',
       ],
     },
   ],

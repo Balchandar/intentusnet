@@ -1,7 +1,7 @@
 [project]
 name = "intentusnet"
-version = "1.3.0"
-description = "IntentusNet is a deterministic AI intent routing and execution runtime that makes LLM-driven systems inspectable, replayable, and failure-safe."
+version = "4.5.0"
+description = "IntentusNet is a deterministic execution platform for AI agents — CI-enforced reproducibility, replayable execution, and provable determinism."
 readme = "README.md"
 requires-python = ">=3.9"
 license = { file = "LICENSE" }
@@ -74,6 +74,14 @@ package-dir = { "" = "src" }
 [tool.setuptools.packages.find]
 where = ["src"]
 include = ["intentusnet", "intentusnet.*"]
+
+# -------------------------------------------------
+# TESTING
+# -------------------------------------------------
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+asyncio_mode = "strict"
 
 # -------------------------------------------------
 # TOOLING

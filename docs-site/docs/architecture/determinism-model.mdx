@@ -311,6 +311,36 @@ Capability(intent=IntentRef(name="Process", version="2.0"))
 | Model output | No | Yes | Yes |
 | Network latency | No | Yes | N/A |
 
+## Provable Determinism (v4.5)
+
+IntentusNet v4.5 extends the determinism model with **provable guarantees**:
+
+### Execution Fingerprinting
+
+Every execution produces a SHA-256 fingerprint computed from the intent sequence, agent call sequence, parameter hashes, output hashes, retry pattern, execution order, and timeout values. If the fingerprint changes between runs with identical input, nondeterminism is detected automatically.
+
+### Drift Detection
+
+When a nondeterministic agent is introduced (e.g., one that uses `random.random()` without a seed), the execution fingerprint changes across runs. The CI pipeline detects this as **drift** and blocks deployment.
+
+### Deterministic-Safe CI/CD
+
+A 9-gate verification pipeline enforces determinism before deployment:
+
+| Gate | Verification |
+|------|-------------|
+| Build Reproducibility | Same source → same binary SHA-256 |
+| Deterministic Execution | Same input → same fingerprint |
+| WAL Replay Final-State | Replayed response matches original |
+| Entropy Detection | No unseeded randomness in critical paths |
+| Container Reproducibility | Same Dockerfile → same image hash |
+| Routing Determinism | Same capabilities → same agent selection |
+| Crash Recovery | Side-effect-aware resume/block |
+| WAL Integrity & Tamper | Hash chain + signature verification |
+| Runtime Snapshot | Serialization round-trip integrity |
+
+All 9 gates must pass before deployment.
+
 ## Next Steps
 
 - [Failure Model](./failure-model) — How failures interact with determinism

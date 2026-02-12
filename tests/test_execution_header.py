@@ -157,7 +157,7 @@ def test_replay_engine_handles_missing_reason():
     ok, reason = engine.is_replayable()
 
     assert ok is False
-    assert "Marked not replayable" in reason
+    assert "Marked not retrievable" in reason
 
 
 def test_round_trip_with_replayable_reason():

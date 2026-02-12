@@ -1,0 +1,88 @@
+---
+sidebar_position: 4
+title: "Project Blackbox"
+description: "8-act end-to-end demonstration proving all deterministic guarantees"
+---
+
+# Project Blackbox
+
+Project Blackbox is an 8-act end-to-end demonstration that proves every deterministic guarantee provided by IntentusNet v4.5. It runs locally in under 2 minutes with zero external dependencies.
+
+## Running the Demo
+
+```bash
+python -m examples.superdemo.demo
+```
+
+## What It Proves
+
+| Act | Title | Guarantee Proven |
+|-----|-------|-----------------|
+| 1 | Deterministic Execution | Identical intents produce identical execution fingerprints |
+| 2 | Replay Without Model | Historical response retrieval with zero model re-execution |
+| 3 | Failure Traceability | Injected failure triggers deterministic fallback routing |
+| 4 | Cryptographic Verification | Ed25519 signed WAL with tamper detection |
+| 5 | Crash Recovery | Reversible steps resume; irreversible steps block safely |
+| 6 | Model Swap Safety | Model upgrade preserves all historical execution records |
+| 7 | EMCL Encryption | AES-256-GCM authenticated encryption with tamper detection |
+| 8 | Deterministic Proof | Fingerprint stability, WAL replay proof, drift detection |
+
+## Act Details
+
+### Act 1: Deterministic Execution
+
+Sends two identical loan processing intents through the runtime. Both produce the same execution fingerprint, proving that the routing path, agent selection, and output are deterministic.
+
+### Act 2: Replay Without Model
+
+Takes the execution ID from Act 1 and retrieves the response via `HistoricalResponseEngine`. No agent code runs. No model is called. The response is byte-for-byte identical to the original.
+
+### Act 3: Failure Traceability
+
+Injects a `fail_mode` into the fraud screening agent. The primary agent fails, and the runtime deterministically falls back to the backup agent. The failure, fallback decision, and recovery are all recorded.
+
+### Act 4: Cryptographic Verification
+
+Creates Ed25519-signed WAL entries and verifies the signatures. Then tampers with an entry and demonstrates that the signature verification catches the modification.
+
+### Act 5: Crash Recovery
+
+Simulates two crash scenarios:
+1. **Reversible step** in progress → `RecoveryManager` safely resumes
+2. **Irreversible step** in progress → `RecoveryManager` blocks (requires manual intervention)
+
+### Act 6: Model Swap Safety
+
+Runs the risk assessor with model v1, records the execution, then swaps to model v2. New executions use v2, but retrieving the v1 execution returns the original v1 response — proving that model upgrades never rewrite history.
+
+### Act 7: EMCL Encryption
+
+Encrypts an execution payload with AES-256-GCM, decrypts it, and verifies the round-trip. Then tampers with the ciphertext and demonstrates that decryption fails with an authentication error.
+
+### Act 8: Deterministic Proof
+
+The capstone act with four parts:
+1. **Fingerprint Stability** — Runs the same intent 5 times and verifies all fingerprints are identical
+2. **WAL Replay Proof** — Verifies that replayed response hash matches original
+3. **Drift Detection** — Injects a nondeterministic agent (adds `random.uniform()` noise) and shows fingerprints diverge
+4. **CI Enforcement** — Lists all 9 CI gates that enforce determinism in production
+
+## Architecture
+
+The demo uses a loan processing pipeline with 6 agents:
+
+- **RiskAssessorAgent** — Assesses loan risk (supports v1/v2 model swap)
+- **FraudScreenerAgent** — ML-based fraud detection (supports failure injection)
+- **BackupFraudScreenerAgent** — Rule-based fallback fraud screener
+- **ComplianceValidatorAgent** — Regulatory compliance checks
+- **CreditDecisionAgent** — Final credit decision
+- **LoanOrchestratorAgent** — Pipeline orchestrator
+
+## Source
+
+```
+examples/superdemo/
+├── __init__.py
+├── agents.py    # Agent definitions
+└── demo.py      # Demo runner (8 acts)
+```

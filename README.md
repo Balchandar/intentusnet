@@ -4,6 +4,51 @@
 
 **Deterministic • Transport-Agnostic • EMCL-Ready • MCP-Compatible**
 
+---
+
+[![Version](https://img.shields.io/badge/version-4.5.0-blue.svg)](#)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Python](https://img.shields.io/badge/python-3.9%2B-blue)](#)
+[![MCP](https://img.shields.io/badge/MCP-compatible-brightgreen)](#)
+[![CI](https://img.shields.io/badge/CI-deterministic--safe-brightgreen)](#)
+[![Architecture](https://img.shields.io/badge/architecture-execution--runtime-orange)](#)
+
+---
+
+## What's New in v4.5
+
+IntentusNet v4.5 introduces **provable determinism** — the execution runtime now includes built-in mechanisms to verify, enforce, and prove that execution behavior is deterministic across runs, environments, and model swaps.
+
+| Feature | Description |
+|---------|-------------|
+| **Execution Fingerprinting** | SHA-256 fingerprint of intent sequence, tool calls, param hashes, output hashes, retry pattern, and execution order |
+| **Deterministic-Safe CI/CD** | 9-gate verification pipeline — determinism is enforced before deployment, not just tested |
+| **Drift Detection** | Automatic detection of nondeterministic execution via fingerprint comparison |
+| **WAL Replay Verification** | Prove that stored responses match original execution without re-running models |
+| **Entropy Scanning** | Static analysis gate that blocks unseeded randomness, `uuid4()` in step IDs, and `time()` in fingerprints |
+| **Project Blackbox Demo** | 8-act end-to-end demonstration proving all deterministic guarantees |
+
+---
+
+## Enterprise Features
+
+IntentusNet includes enterprise-grade enforcement, federation, cryptographic proofs, and the Time Machine UI:
+
+| Feature | Description |
+|---------|-------------|
+| **Gateway Enforcement** | Gateway as root of trust with mandatory signing |
+| **Section Encryption** | EMCL section-level encryption with AAD binding |
+| **Federation** | Cross-gateway verification and attestations |
+| **Witness Gateways** | Independent verification with quorum enforcement |
+| **Merkle Batches** | Cryptographic batching with inclusion proofs |
+| **Transparency Logs** | Append-only public logs with signed checkpoints |
+| **Compliance** | Jurisdiction-based enforcement with proofs |
+| **Time Machine UI** | Read-only, verification-first execution inspection |
+
+Enterprise Docs: [docs/enterprise/README.md](docs/enterprise/README.md)
+
+---
+
 IntentusNet is an open-source, language-agnostic **execution runtime for multi-agent and tool-driven systems**.
 It makes routing, fallback, and failure handling **deterministic, recorded, explainable, and production-operable**.
 
@@ -11,22 +56,16 @@ IntentusNet focuses strictly on **execution semantics** (not planning, reasoning
 
 ---
 
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Python](https://img.shields.io/badge/python-3.9%2B-blue)](#)
-[![MCP](https://img.shields.io/badge/MCP-compatible-brightgreen)](#)
-[![Architecture](https://img.shields.io/badge/architecture-execution--runtime-orange)](#)
-
----
-
 ## Documentation
 
-📚 **Docs site:** https://intentusnet.com
+Docs site: https://intentusnet.com
 
 Start here:
 
 - **Introduction** — what IntentusNet is (and isn't)
 - **Guarantees** — the execution contract
 - **Architecture** — routing, execution, recording
+- **Determinism** — fingerprinting, drift detection, CI enforcement
 - **CLI** — inspect, trace, retrieve, diff
 
 ---
@@ -83,6 +122,7 @@ IntentusNet enforces **deterministic execution semantics around LLMs and tools**
 - **Retrievable** — stored responses can be inspected without re-execution
 - **Attributable** — routing decisions are recorded and traceable
 - **Explainable** — execution paths are deterministic given identical input
+- **Provable** — execution fingerprints verify determinism across runs
 
 ---
 
@@ -99,8 +139,53 @@ IntentusNet provides an explicit execution contract:
 | Structured Errors            | **Provided**          | Typed error codes, no silent failures            |
 | Crash Recovery               | **Provided**          | WAL-backed execution state & recovery            |
 | Signed WAL (REGULATED)       | **Provided**          | Ed25519 per-entry signatures for audit trail     |
+| Execution Fingerprinting     | **Provided (v4.5)**   | SHA-256 fingerprint proves deterministic execution |
+| Deterministic-Safe CI/CD     | **Provided (v4.5)**   | 9-gate pipeline enforces determinism before deploy |
+| Drift Detection              | **Provided (v4.5)**   | Automatic nondeterminism detection via fingerprints |
 
-➡️ Full guarantee details: https://intentusnet.com/docs/guarantees
+Full guarantee details: https://intentusnet.com/docs/guarantees
+
+---
+
+## Provable Determinism (v4.5)
+
+IntentusNet v4.5 treats determinism as a **provable property**, not just a design goal.
+
+### Execution Fingerprinting
+
+Every execution produces a SHA-256 fingerprint computed from:
+
+- Intent sequence (ordered)
+- Tool/agent call sequence
+- Parameter hashes
+- Output hashes
+- Retry pattern
+- Execution order
+- Timeout values
+
+**Same input + same runtime = same fingerprint.** If the fingerprint changes, something is nondeterministic — and the system detects it.
+
+### Deterministic-Safe CI/CD
+
+The CI/CD pipeline enforces determinism through 9 verification gates:
+
+| Gate | Verification |
+|------|-------------|
+| Build Reproducibility | Two builds from same commit produce identical SHA-256 |
+| Deterministic Execution | N runs of same intent produce identical fingerprints |
+| WAL Replay Final-State | Replayed response matches original execution hash |
+| Entropy Detection | Static scan blocks unseeded random, uuid4 in step IDs, time in hashes |
+| Container Reproducibility | Container image hash is identical across builds |
+| Routing Determinism | Same capabilities → same agent selection across N runs |
+| Crash Recovery | Reversible steps resume; irreversible steps block safely |
+| WAL Integrity & Tamper | Hash chain verification + tamper injection detection |
+| Runtime Snapshot | Execution record survives JSON serialization round-trip |
+
+**All 9 gates must pass before deployment.** A single failure blocks the release.
+
+### Drift Detection
+
+Inject a nondeterministic agent → fingerprint changes → drift detected → deployment blocked. This is not a test — it is a **runtime property** that is continuously enforced.
 
 ---
 
@@ -125,9 +210,9 @@ This enables:
 
 **Important:** "Retrieve" returns the stored response exactly as recorded. It does not re-execute agent code or validate that the current system would produce the same result.
 
-This design is formalized in:  
-**RFC-0001 — Debuggable Execution Semantics for LLM Systems**  
-→ `rfcs/RFC-0001-debuggable-llm-execution.md`
+This design is formalized in:
+**RFC-0001 — Debuggable Execution Semantics for LLM Systems**
+> `rfcs/RFC-0001-debuggable-llm-execution.md`
 
 **Non-goals:** IntentusNet does not plan tasks, reason about goals, evaluate outputs, or optimize prompts.
 
@@ -138,11 +223,14 @@ This design is formalized in:
 - Deterministic intent routing (DIRECT, FALLBACK, BROADCAST strategies)
 - Explicit fallback chains
 - Execution recording (**WAL-backed**, hash-chained)
+- Execution fingerprinting (SHA-256, drift detection)
 - Historical response retrieval
 - Crash-safe recovery
 - Typed failures & execution contracts
 - Signed WAL entries (REGULATED mode, Ed25519)
 - Compliance enforcement (DEVELOPMENT / STANDARD / REGULATED)
+- EMCL payload encryption (AES-256-GCM)
+- Deterministic-safe CI/CD (9-gate pipeline)
 - Operator-grade CLI
 - Transport-agnostic execution
 
@@ -206,11 +294,9 @@ IntentusNet is **MCP-compatible by design**:
 
 IntentusNet provides deterministic execution semantics **around MCP tools**, not a replacement for MCP.
 
-📘 **MCP Documentation:**  
-https://intentusnet.com/docs/mcp
+MCP Documentation: https://intentusnet.com/docs/mcp
 
-📦 **MCP Adapter Source:**  
-https://github.com/Balchandar/intentusnet/tree/main/src/intentusnet/mcp
+MCP Adapter Source: https://github.com/Balchandar/intentusnet/tree/main/src/intentusnet/mcp
 
 ---
 
@@ -236,6 +322,8 @@ Including: Python, C#, Go, TypeScript, Rust.
 - Multi-transport execution
 - Execution recorder & historical retrieval engine
 - WAL-backed crash recovery
+- Execution fingerprinting & drift detection
+- Deterministic-safe CI/CD gates
 - EMCL providers
 - MCP adapter
 - CLI tooling
@@ -249,8 +337,7 @@ Including: Python, C#, Go, TypeScript, Rust.
 
 All demos are runnable and deterministic. Execution responses are recorded and retrievable.
 
-📂 **Demo Index:**  
-https://intentusnet.com/docs/demos
+Demo Index: https://intentusnet.com/docs/demos
 
 ---
 
@@ -262,11 +349,9 @@ Compares three approaches using identical capabilities:
 - **with** — deterministic routing via IntentusNet
 - **mcp** — routing backed by a mock MCP tool server
 
-📘 **Demo Documentation:**  
-https://intentusnet.com/docs/demos/deterministic-routing
+Demo Documentation: https://intentusnet.com/docs/demos/deterministic-routing
 
-📦 **Source Code:**  
-https://github.com/Balchandar/intentusnet/tree/main/examples/deterministic_routing_demo
+Source Code: https://github.com/Balchandar/intentusnet/tree/main/examples/deterministic_routing_demo
 
 ```bash
 python -m examples.deterministic_routing_demo.demo --mode without
@@ -280,11 +365,28 @@ python -m examples.deterministic_routing_demo.demo --mode mcp
 
 Demonstrates how model upgrades change live behavior while **past execution responses remain retrievable** without re-running models.
 
-📘 **Demo Documentation:**  
-https://intentusnet.com/docs/demos/execution-replay
+Demo Documentation: https://intentusnet.com/docs/demos/execution-replay
 
-📦 **Source Code:**  
-https://github.com/Balchandar/intentusnet/tree/main/examples/execution_replay_example
+Source Code: https://github.com/Balchandar/intentusnet/tree/main/examples/execution_replay_example
+
+---
+
+### Project Blackbox (`superdemo`)
+
+An 8-act end-to-end demonstration that proves every deterministic guarantee:
+
+1. **Deterministic Execution** — identical intents produce identical fingerprints
+2. **Replay Without Model** — historical response retrieval with zero re-execution
+3. **Failure Traceability** — injected failure triggers deterministic fallback
+4. **Cryptographic Verification** — Ed25519 signed WAL with tamper detection
+5. **Crash Recovery** — reversible steps resume, irreversible steps block
+6. **Model Swap Safety** — model upgrade preserves historical records
+7. **EMCL Encryption** — AES-256-GCM authenticated encryption with tamper detection
+8. **Deterministic Proof** — fingerprint stability, replay proof, drift detection
+
+```bash
+python -m examples.superdemo.demo
+```
 
 ---
 
@@ -297,6 +399,8 @@ IntentusNet is a **deterministic execution runtime**, not an autonomous agent fr
 - Deterministic routing, fallback, and failures
 - Crash-safe execution recording (WAL with hash chaining)
 - Historical response retrieval without re-execution
+- Execution fingerprinting and drift detection
+- Deterministic-safe CI/CD enforcement
 - Explicit contracts and typed failures
 - CLI-first operational control
 
@@ -305,16 +409,25 @@ IntentusNet is a **deterministic execution runtime**, not an autonomous agent fr
 - No task planning or reasoning
 - No evaluation of model outputs
 - No replacement for workflow engines
-- No distributed consensus in v1
+- No distributed consensus in v4
 
 ### Determinism Boundary
 
-Determinism is enforced at the **execution layer**, not the **model layer**.  
+Determinism is enforced at the **execution layer**, not the **model layer**.
 Non-deterministic model behavior is detected, recorded, and surfaced — never hidden.
 
 ---
 
 ## Roadmap
+
+See [docs/roadmap.md](docs/roadmap.md) for the full roadmap.
+
+**Current: v4.5** — Provable Determinism
+
+- Execution fingerprinting
+- Deterministic-safe CI/CD (9 gates)
+- Drift detection
+- Project Blackbox demo
 
 **Next**
 
@@ -345,4 +458,4 @@ MIT License
 
 ### Keywords
 
-Deterministic execution runtime, intent routing, explicit fallback chains, recorded agent workflows, debuggable LLM systems, execution recording, WAL-backed recovery, signed WAL, compliance modes, MCP-compatible runtime, EMCL-secured agent communication, transport-agnostic AI infrastructure.
+Deterministic execution runtime, intent routing, explicit fallback chains, recorded agent workflows, debuggable LLM systems, execution recording, WAL-backed recovery, signed WAL, compliance modes, MCP-compatible runtime, EMCL-secured agent communication, transport-agnostic AI infrastructure, execution fingerprinting, deterministic CI/CD, drift detection, provable determinism.
