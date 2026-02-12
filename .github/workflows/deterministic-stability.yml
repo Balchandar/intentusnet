@@ -124,9 +124,8 @@ jobs:
       - name: Run deterministic evaluation (3x)
         id: eval
         run: |
-          cd deterministic_agent
-          python -m eval_agent \
-            --dataset tests/golden_dataset.jsonl \
+          python -m deterministic_agent.eval_agent \
+            --dataset deterministic_agent/tests/golden_dataset.jsonl \
             --wal-dir /tmp/eval_wal \
             --runs ${{ github.event.inputs.num_runs || env.NUM_RUNS }} \
             --threshold ${{ github.event.inputs.threshold || env.RELIABILITY_THRESHOLD }} \
