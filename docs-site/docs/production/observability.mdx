@@ -300,7 +300,7 @@ app = FastAPI()
 
 @app.get("/health")
 async def health():
-    return {"status": "healthy", "version": "1.4.0"}
+    return {"status": "healthy", "version": "4.5.0"}
 
 @app.get("/health/ready")
 async def ready():

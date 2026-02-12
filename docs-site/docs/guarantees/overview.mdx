@@ -21,6 +21,9 @@ Every production runtime needs a clear contract. IntentusNet's contract is:
 | Structured Errors            | **Provided**          | Typed error codes, no silent failures                  |
 | Crash Recovery               | **Provided**          | WAL-backed execution state with recovery               |
 | Signed WAL (REGULATED)       | **Provided**          | Ed25519 per-entry signatures for audit trail           |
+| Execution Fingerprinting     | **Provided (v4.5)**   | SHA-256 fingerprint proves deterministic execution     |
+| Deterministic-Safe CI/CD     | **Provided (v4.5)**   | 9-gate pipeline enforces determinism before deploy     |
+| Drift Detection              | **Provided (v4.5)**   | Automatic nondeterminism detection via fingerprints    |
 
 :::note Design Goals vs. Implemented Guarantees
 Features marked as "Design Goal" are architecturally planned but may have implementation limitations in the current version. See individual guarantee pages for details.
@@ -28,7 +31,7 @@ Features marked as "Design Goal" are architecturally planned but may have implem
 
 ## Quick Reference
 
-### What IS Guaranteed (v1.3.x)
+### What IS Guaranteed (v4.5)
 
 ```
 ✓ Deterministic agent ordering
@@ -39,6 +42,9 @@ Features marked as "Design Goal" are architecturally planned but may have implem
 ✓ Trace span emission for every decision
 ✓ Policy allow/deny evaluation
 ✓ Signed WAL entries (REGULATED mode)
+✓ Execution fingerprinting (v4.5)
+✓ Deterministic-safe CI/CD enforcement (v4.5)
+✓ Drift detection (v4.5)
 ```
 
 ### What is NOT Guaranteed
@@ -133,6 +139,8 @@ Guarantees may evolve across versions:
 | 0.2.x           | Execution recording, trace spans               |
 | 0.3.x           | Historical response retrieval, stable hashes   |
 | 1.0.x           | WAL signing, compliance modes (Phase I)        |
+| 4.0.x           | Enterprise features, gateway enforcement       |
+| 4.5.x           | Execution fingerprinting, deterministic CI/CD, drift detection |
 
 ## Verifying Guarantees
 
