@@ -1,0 +1,167 @@
+---
+sidebar_position: 4
+title: Deterministic MCP Gateway
+description: Transparent MCP proxy with execution recording, WAL persistence, and fast replay
+---
+
+# Deterministic MCP Gateway
+
+The IntentusNet MCP Gateway wraps **any** MCP server transparently and adds deterministic execution recording, WAL-backed persistence, and fast replay.
+
+```
+MCP Client  →  IntentusNet Gateway  →  Existing MCP Server
+                      ↓
+              WAL + Index + Data
+```
+
+## Why
+
+MCP servers process tool calls but don't record them. When something goes wrong, there's no audit trail, no replay capability, and no way to prove what happened.
+
+The gateway adds these capabilities without changing the MCP server or client.
+
+| Without Gateway | With Gateway |
+|-----------------|--------------|
+| Tool calls are fire-and-forget | Every call recorded with hashes |
+| No replay | Fast replay from WAL |
+| No audit trail | Full execution history |
+| Crash = lost context | Crash-safe WAL persistence |
+| No execution ordering | Deterministic seed captured |
+
+## How It Works
+
+The gateway operates as a transparent proxy:
+
+1. **Receives** MCP JSON-RPC request from client
+2. **Intercepts** tool-related methods (`tools/call`, `tools/list`, etc.)
+3. **Records** execution start to WAL (durability boundary)
+4. **Forwards** request to the real MCP server unmodified
+5. **Records** response and execution end to WAL
+6. **Returns** response to client unmodified
+
+Protocol-level messages (`initialize`, `ping`) pass through without recording.
+
+### What Gets Recorded
+
+For each tool call:
+
+| Field | Description |
+|-------|-------------|
+| `execution_id` | Stable, unique identifier |
+| `deterministic_seed` | Timestamp, sequence, PID, random seed |
+| `request_hash` | SHA-256 of the canonical request |
+| `response_hash` | SHA-256 of the canonical response |
+| `method` | MCP method (e.g., `tools/call`) |
+| `tool_name` | Tool name if applicable |
+| `started_at` / `completed_at` | Timing metadata |
+| `duration_ms` | Execution duration |
+| WAL entries | `execution_start` + `execution_end` |
+
+## Modes
+
+### HTTP Proxy
+
+Proxies to an HTTP-based MCP server:
+
+```bash
+intentusnet gateway --http http://localhost:3000
+```
+
+The gateway listens on port 8765 and forwards all requests to the target URL.
+
+### Stdio Wrapper
+
+Wraps a stdio-based MCP server command:
+
+```bash
+intentusnet gateway --wrap "npx @modelcontextprotocol/server-filesystem /tmp"
+```
+
+Reads JSON-RPC from stdin, forwards to the subprocess, and writes responses to stdout — with recording in between.
+
+## Fast Replay
+
+Replay returns the stored response from WAL. No MCP server is contacted. No tool is re-executed.
+
+```bash
+intentusnet replay <execution-id>
+```
+
+This is a **lookup operation**, not re-execution. The response is exactly what was recorded at execution time.
+
+### Replay Output
+
+```
+Replay Result (WAL Playback)
+==================================================
+Execution ID:       a1b2c3d4-...
+Status:             completed
+Method:             tools/call
+Tool:               add
+Request hash:       7f83b1657ff1fc...
+Response hash:      3a7bd3e2360a3d...
+Duration:           12.3ms
+WAL entries:        2
+
+Deterministic Seed:
+  Sequence:         1
+  Random seed:      a3f7c2b1e4d6...
+
+Response:
+  {"jsonrpc": "2.0", "id": 1, "result": ...}
+
+WARNING: This is the RECORDED response. No MCP tool was re-executed.
+```
+
+## Crash Safety
+
+The gateway uses an append-only, hash-chained WAL with `fsync` guarantees:
+
+- **Before WAL commit**: Crash may lose the in-flight execution (expected)
+- **After WAL commit**: Execution is durable (survives crash)
+- **On restart**: Partial executions are detected and marked
+- **Index rebuild**: Works from persisted data files if index is corrupted
+
+```bash
+# Check WAL integrity
+intentusnet status
+```
+
+## Deterministic Seed
+
+Each execution captures a deterministic seed:
+
+- Wall-clock timestamp at execution start
+- Gateway-global monotonic sequence number
+- Process ID
+- Captured random seed (32 bytes)
+
+This prepares for future deterministic replay (not yet implemented — seeds are captured and stored for forward compatibility).
+
+## CLI Commands
+
+| Command | Description |
+|---------|-------------|
+| `intentusnet gateway --http <url>` | Start HTTP proxy |
+| `intentusnet gateway --wrap <cmd>` | Start stdio wrapper |
+| `intentusnet replay <id>` | Replay execution from WAL |
+| `intentusnet executions` | List all recorded executions |
+| `intentusnet status` | Show gateway status and WAL integrity |
+
+## Current Limitations
+
+- Streaming responses are relayed but not recorded at the stream level (final response is captured)
+- No deterministic re-execution yet (replay returns stored response only)
+- No undo or rollback
+- No dashboard UI
+- HTTP proxy listens on port 8765 (not yet configurable via CLI)
+
+## Example
+
+See the complete runnable example: [`examples/basic-mcp-server/`](https://github.com/Balchandar/intentusnet/tree/main/examples/basic-mcp-server)
+
+## Next Steps
+
+- [Quickstart](../getting-started/quickstart) — 5-minute runnable example
+- [CLI Reference](../cli/overview) — Full CLI documentation
+- [Integration Patterns](./integration-patterns) — MCP integration patterns

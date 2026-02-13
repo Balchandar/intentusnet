@@ -33,6 +33,16 @@ intentusnet --version
 | [`intentusnet estimate`](./estimate) | Estimate execution cost/resources |
 | [`intentusnet validate`](./validate) | Validate envelope or policy       |
 
+### MCP Gateway Commands
+
+| Command | Description |
+| ------- | ----------- |
+| `intentusnet gateway --wrap <cmd>` | Start stdio gateway wrapping an MCP server |
+| `intentusnet gateway --http <url>` | Start HTTP gateway proxying to an MCP server |
+| `intentusnet executions` | List all gateway-recorded executions |
+| `intentusnet replay <execution-id>` | Fast replay from WAL (no re-execution) |
+| `intentusnet status` | Show gateway status and WAL integrity |
+
 ## Global Options
 
 All commands support these global options:

@@ -56,6 +56,12 @@ from .contract_commands import (
     contracts_show,
     contracts_violations,
 )
+from .gateway_commands import (
+    gateway_start,
+    gateway_replay,
+    gateway_executions,
+    gateway_status,
+)
 
 
 def create_parser() -> argparse.ArgumentParser:
@@ -270,6 +276,45 @@ def create_parser() -> argparse.ArgumentParser:
     violations_parser = contracts_subparsers.add_parser("violations", help="Show violations")
     violations_parser.add_argument("execution_id", help="Execution ID")
 
+    # ========================================================================
+    # GATEWAY COMMANDS (v1.5.1 MCP Gateway Foundation)
+    # ========================================================================
+    gateway_parser = subparsers.add_parser(
+        "gateway",
+        help="Start MCP gateway proxy (wraps any MCP server transparently)"
+    )
+    gateway_parser.add_argument(
+        "--wrap",
+        metavar="COMMAND",
+        help="Wrap a stdio MCP server command (e.g., 'npx @modelcontextprotocol/server-foo')",
+    )
+    gateway_parser.add_argument(
+        "--http",
+        metavar="URL",
+        help="Proxy to an HTTP MCP server (e.g., 'http://localhost:3000')",
+    )
+    gateway_parser.add_argument(
+        "--gateway-dir",
+        default=".intentusnet/gateway",
+        help="Gateway data directory (default: .intentusnet/gateway)",
+    )
+
+    # ========================================================================
+    # EXECUTIONS COMMAND (v1.5.1 Gateway - list all recorded executions)
+    # ========================================================================
+    subparsers.add_parser(
+        "executions",
+        help="List all gateway-recorded executions"
+    )
+
+    # ========================================================================
+    # STATUS COMMAND (v1.5.1 Gateway status)
+    # ========================================================================
+    subparsers.add_parser(
+        "status",
+        help="Show gateway status and execution statistics"
+    )
+
     return parser
 
 
@@ -326,8 +371,9 @@ def main() -> None:
             retrieve_execution(args)
 
         elif args.command == "replay":
-            # DEPRECATED: Calls retrieve_execution with deprecation warning
-            replay_execution(args)
+            # v1.5.1: Gateway fast replay (WAL playback)
+            # Falls back to deprecated retrieve if gateway data not found
+            gateway_replay(args)
 
         elif args.command == "recovery":
             if args.recovery_subcommand == "scan":
@@ -364,6 +410,18 @@ def main() -> None:
                 contracts_show(args)
             elif args.subcommand == "violations":
                 contracts_violations(args)
+
+        # ================================================================
+        # Gateway commands (v1.5.1)
+        # ================================================================
+        elif args.command == "gateway":
+            gateway_start(args)
+
+        elif args.command == "executions":
+            gateway_executions(args)
+
+        elif args.command == "status":
+            gateway_status(args)
 
         else:
             parser.print_help()

@@ -232,8 +232,107 @@ if is_ok:
 | Recording | Automatic capture of execution |
 | Replay | Return recorded output |
 
+---
+
+## MCP Gateway Quickstart
+
+Already have an MCP server? Wrap it with the IntentusNet Gateway in 5 minutes — no server changes required.
+
+### Step 1: Start an MCP Server
+
+Use the included example server (or any existing MCP server):
+
+```bash
+python examples/basic-mcp-server/server.py
+```
+
+```
+Basic MCP server running on http://localhost:5123
+Tools available: add(a, b)
+```
+
+### Step 2: Start the Gateway
+
+In a second terminal:
+
+```bash
+intentusnet gateway --http http://localhost:5123
+```
+
+The gateway wraps the server transparently. No protocol changes.
+
+### Step 3: Send a Request Through the Gateway
+
+```bash
+curl -s http://localhost:8765 -X POST \
+  -H "Content-Type: application/json" \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "tools/call",
+    "params": {
+      "name": "add",
+      "arguments": {"a": 17, "b": 25}
+    }
+  }' | python -m json.tool
+```
+
+Response (identical to calling the server directly):
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "result": {
+    "content": [{"type": "text", "text": "17 + 25 = 42"}]
+  }
+}
+```
+
+### Step 4: See Recorded Executions
+
+```bash
+intentusnet executions
+```
+
+```
+EXECUTION ID                             STATUS       METHOD          TOOL        DURATION
+--------------------------------------------------------------------------------------------
+a1b2c3d4-e5f6-7890-abcd-ef1234567890     completed    tools/call      add         12ms
+```
+
+### Step 5: Replay the Execution
+
+```bash
+intentusnet replay <execution-id>
+```
+
+Returns the stored response from WAL — no MCP server contacted, no tool re-executed.
+
+### What You Should See
+
+After completing all steps:
+
+- **Gateway active** — Requests pass through transparently
+- **Execution recorded** — Every tool call captured with hashes and timing
+- **Replay works** — Stored response returned from WAL without re-execution
+- **Deterministic seed captured** — Prepares for future deterministic replay
+
+### How It Works
+
+```
+MCP Client (curl)  →  IntentusNet Gateway (8765)  →  MCP Server (5123)
+                              ↓
+                    WAL + Index + Data Store
+```
+
+The gateway intercepts tool calls, records them to an append-only WAL with hash chaining, captures deterministic seeds, and indexes executions for fast lookup and replay. The MCP server and client are completely unmodified.
+
+---
+
 ## Next Steps
 
 - [Walkthrough](./walkthrough) — Complete example with policy filtering and crash recovery
+- [MCP Gateway](../mcp/gateway) — Deterministic MCP Gateway details
 - [CLI Reference](../cli/overview) — Command-line tools for inspection and replay
 - [Guarantees](../guarantees/overview) — Understand what IntentusNet guarantees
