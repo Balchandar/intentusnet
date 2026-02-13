@@ -252,6 +252,75 @@ class AgentResponse:
 └─────────────────────────────────────────┘
 ```
 
+## MCP Gateway Architecture
+
+The Deterministic MCP Gateway operates as a transparent proxy layer between MCP clients and servers:
+
+```mermaid
+flowchart TB
+    subgraph Client["MCP Client"]
+        CL[Client Application]
+    end
+
+    subgraph Gateway["IntentusNet Gateway"]
+        direction TB
+        PX[MCP Proxy]
+        INT[Execution Interceptor]
+        WAL[Gateway WAL]
+        IDX[Execution Index]
+        DS[Data Store]
+    end
+
+    subgraph Server["MCP Server"]
+        SRV[Tool Server]
+    end
+
+    CL -->|MCP JSON-RPC| PX
+    PX --> INT
+    INT --> WAL
+    INT --> IDX
+    INT --> DS
+    PX -->|Forward unchanged| SRV
+    SRV -->|Response| PX
+    PX -->|Response unchanged| CL
+```
+
+### Gateway Data Flow
+
+1. MCP client sends JSON-RPC request to the gateway
+2. Gateway intercepts tool-related methods (`tools/call`, `tools/list`, etc.)
+3. Execution interceptor writes `execution_start` to WAL (durability boundary)
+4. Request is forwarded to the MCP server unmodified
+5. Response is received from the MCP server
+6. Execution interceptor writes `execution_end` to WAL
+7. Full execution data is persisted to the data store
+8. Execution index is updated
+9. Response is returned to the client unmodified
+
+The gateway adds no protocol changes. Clients and servers are unaware of its presence.
+
+### Gateway Components
+
+| Component | Purpose |
+|-----------|---------|
+| **MCP Proxy** | Transparent stdio/HTTP relay |
+| **Execution Interceptor** | Records tool calls with WAL entries |
+| **Gateway WAL** | Append-only, hash-chained, fsync-safe log |
+| **Execution Index** | Fast O(1) lookup by execution ID |
+| **Data Store** | Full execution data (request, response, seed) |
+
+### Fast Replay
+
+Replay reads from the WAL and data store — no MCP server is contacted:
+
+```mermaid
+flowchart LR
+    CLI[intentusnet replay] --> IDX[Execution Index]
+    IDX --> DS[Data Store]
+    DS --> WAL[WAL Entries]
+    WAL --> RES[Replay Result]
+```
+
 ## Extension Points
 
 IntentusNet is extensible at multiple points:

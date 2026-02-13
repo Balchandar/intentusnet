@@ -106,6 +106,80 @@ intentusnet retrieve <execution-id>
 
 ---
 
+## Deterministic MCP Gateway
+
+Wrap **any** MCP server with the IntentusNet Gateway — zero changes to the server or client.
+
+```
+MCP Client  →  IntentusNet Gateway  →  Existing MCP Server
+                      ↓
+              WAL + Index + Data
+```
+
+### Why
+
+MCP servers process tool calls but don't record them. When something goes wrong, there's no audit trail, no replay, and no way to prove what happened. The gateway adds these capabilities transparently.
+
+### 5-Minute Example
+
+**1. Start an MCP server** (included example):
+
+```bash
+python examples/basic-mcp-server/server.py
+```
+
+**2. Start the gateway:**
+
+```bash
+intentusnet gateway --http http://localhost:5123
+```
+
+**3. Send a request through the gateway:**
+
+```bash
+curl -s http://localhost:8765 -X POST \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"add","arguments":{"a":17,"b":25}}}' \
+  | python -m json.tool
+```
+
+**4. List recorded executions:**
+
+```bash
+intentusnet executions
+```
+
+**5. Replay an execution** (WAL playback, no re-execution):
+
+```bash
+intentusnet replay <execution-id>
+```
+
+### Gateway CLI
+
+| Command | Description |
+|---------|-------------|
+| `intentusnet gateway --wrap <cmd>` | Wrap a stdio MCP server |
+| `intentusnet gateway --http <url>` | Proxy to an HTTP MCP server |
+| `intentusnet replay <id>` | Fast replay from WAL |
+| `intentusnet executions` | List all recorded executions |
+| `intentusnet status` | Gateway status + WAL integrity |
+
+### What Gets Recorded
+
+Each tool call is persisted with: execution ID, deterministic seed, request/response hashes, WAL entries (execution start + end), timing metadata, and tool name.
+
+### Current Limitations
+
+- Streaming: simple pass-through (not recorded at stream level)
+- No deterministic re-execution yet (replay returns stored response only)
+- No undo or rollback
+- No dashboard UI
+
+Full documentation: [examples/basic-mcp-server/README.md](examples/basic-mcp-server/README.md)
+
+---
+
 ## Why IntentusNet
 
 Modern LLM systems are observable, but **not debuggable**.

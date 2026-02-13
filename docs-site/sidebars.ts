@@ -88,6 +88,7 @@ const sidebars: SidebarsConfig = {
       collapsed: true,
       items: [
         'mcp/overview',
+        'mcp/gateway',
         'mcp/integration-patterns',
         'mcp/protocol-vs-runtime',
       ],

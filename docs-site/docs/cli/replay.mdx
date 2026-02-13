@@ -239,7 +239,64 @@ done
 | 10 | Record not found |
 | 11 | Not replayable / hash mismatch |
 
+## MCP Gateway Replay (WAL Playback)
+
+When used with the MCP Gateway, `intentusnet replay` reads from the gateway's WAL and returns the stored MCP response with full execution metadata.
+
+```bash
+intentusnet replay <execution-id>
+```
+
+Output includes:
+
+- Original request and response (with hashes)
+- Deterministic seed (sequence, timestamp, random seed)
+- WAL entry count
+- Timing metadata
+- Tool name and MCP method
+
+This is a **WAL playback** operation. No MCP server is contacted and no tool is re-executed. The response is exactly what was recorded at execution time.
+
+### JSON Output
+
+```bash
+intentusnet replay <execution-id> --output json
+```
+
+```json
+{
+  "execution_id": "a1b2c3d4-...",
+  "status": "completed",
+  "method": "tools/call",
+  "tool_name": "add",
+  "request_hash": "7f83b165...",
+  "response_hash": "3a7bd3e2...",
+  "deterministic_seed": {
+    "sequence_number": 1,
+    "timestamp_iso": "2024-01-15T10:30:00Z",
+    "random_seed": "a3f7c2b1...",
+    "process_id": 12345
+  },
+  "response": {"jsonrpc": "2.0", "id": 1, "result": {...}},
+  "wal_entries": [...],
+  "warning": "This is the RECORDED response. No MCP tool was re-executed."
+}
+```
+
+### Gateway Replay vs Runtime Replay
+
+| Aspect | Gateway Replay | Runtime Replay |
+|--------|---------------|----------------|
+| Source | Gateway WAL + data store | Execution records |
+| Scope | MCP tool calls | IntentusNet intent executions |
+| Data | Full MCP request/response | IntentEnvelope + AgentResponse |
+| Seed | Deterministic seed captured | Execution fingerprint |
+| Command | `intentusnet replay <id>` | `intentusnet retrieve <id>` |
+
+Both are lookup operations. Neither re-executes code.
+
 ## See Also
 
 - [`intentusnet inspect`](./inspect) — View execution details
 - [Replayability Guarantees](../guarantees/replayability) — Replay semantics
+- [MCP Gateway](../mcp/gateway) — Deterministic MCP Gateway details
