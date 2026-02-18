@@ -27,7 +27,7 @@ from .recording.models import ExecutionRecord
 from .recording.replay import ReplayEngine
 from .recording.store import FileExecutionStore
 
-__version__ = "0.3.0"
+__version__ = "1.5.1"
 
 __all__ = [
     # Core runtime

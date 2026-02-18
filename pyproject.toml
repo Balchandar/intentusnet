@@ -1,6 +1,6 @@
 [project]
 name = "intentusnet"
-version = "4.5.0"
+version = "1.5.1"
 description = "IntentusNet is a deterministic execution platform for AI agents — CI-enforced reproducibility, replayable execution, and provable determinism."
 readme = "README.md"
 requires-python = ">=3.9"

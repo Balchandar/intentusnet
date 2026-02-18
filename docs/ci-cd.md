@@ -2,7 +2,7 @@
 
 ## Overview
 
-IntentusNet v4.5 includes a **9-gate CI/CD verification pipeline** that enforces determinism before deployment. This is not a test suite — it is a deployment gate. Every gate must pass, or the release is blocked.
+IntentusNet v1.5.1 includes a **9-gate CI/CD verification pipeline** that enforces determinism before deployment. This is not a test suite — it is a deployment gate. Every gate must pass, or the release is blocked.
 
 The pipeline is defined in `.github/workflows/deterministic-stability.yml`.
 

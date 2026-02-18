@@ -26,7 +26,7 @@ Verify installation:
 
 ```bash
 python -c "import intentusnet; print(intentusnet.__version__)"
-# Output: 4.5.0
+# Output: 1.5.1
 ```
 
 ## Installation Options
@@ -78,7 +78,7 @@ pip install -e ".[dev]"
 Pull the official image:
 
 ```bash
-docker pull intentusnet/runtime:4.5.0
+docker pull intentusnet/runtime:1.5.1
 ```
 
 Run a container:
@@ -87,7 +87,7 @@ Run a container:
 docker run -it --rm \
   -v $(pwd)/config:/app/config \
   -v $(pwd)/records:/app/.intentusnet/records \
-  intentusnet/runtime:4.5.0
+  intentusnet/runtime:1.5.1
 ```
 
 ## Verify Installation
@@ -123,7 +123,7 @@ Expected output:
 
 ```
 Name: intentusnet
-Version: 4.5.0
+Version: 1.5.1
 Summary: Deterministic execution runtime for multi-agent systems
 Requires: cryptography, websockets, pyzmq, fastapi, uvicorn, python-dateutil
 ```
