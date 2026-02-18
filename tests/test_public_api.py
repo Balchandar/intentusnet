@@ -35,7 +35,7 @@ def test_version_export():
     import intentusnet
 
     assert hasattr(intentusnet, "__version__")
-    assert intentusnet.__version__ == "0.3.0"
+    assert intentusnet.__version__ == "1.5.1"
     assert isinstance(intentusnet.__version__, str)
 
 

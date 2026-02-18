@@ -9,9 +9,9 @@ Anything not marked as released should be considered **non-committal**.
 
 ## Released
 
-### v4.5.0 — Provable Determinism (Current)
+### v1.5.1 — Provable Determinism (Current)
 
-IntentusNet v4.5 introduces provable determinism:
+IntentusNet v1.5.1 introduces provable determinism:
 
 - Execution fingerprinting (SHA-256)
 - Deterministic-safe CI/CD (9-gate verification pipeline)
@@ -21,7 +21,7 @@ IntentusNet v4.5 introduces provable determinism:
 - Project Blackbox demo (8-act end-to-end proof)
 - Enterprise features (gateway enforcement, federation, Time Machine UI)
 
-See [release-notes/v4.5.md](release-notes/v4.5.md) for full details.
+See [release-notes/v1.5.1.md](release-notes/v1.5.1.md) for full details.
 
 ### v4.0 — Enterprise & Deterministic Runtime
 
@@ -44,9 +44,9 @@ IntentusNet v4.0 provides:
 
 ---
 
-## Near-Term (v4.x)
+## Near-Term (v1.x)
 
-The following may be considered for v4.x **without breaking guarantees**:
+The following may be considered for v1.x **without breaking guarantees**:
 
 - Bug fixes and correctness improvements
 - Documentation clarifications
@@ -54,7 +54,7 @@ The following may be considered for v4.x **without breaking guarantees**:
 - Additional CI gate scripts
 - Minor API ergonomics (non-breaking only)
 
-No new routing semantics will be introduced in v4.x.
+No new routing semantics will be introduced in v1.x.
 
 ---
 

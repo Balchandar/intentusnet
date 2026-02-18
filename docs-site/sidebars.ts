@@ -133,7 +133,7 @@ const sidebars: SidebarsConfig = {
       label: 'Release Notes',
       collapsed: true,
       items: [
-        'release-notes/v4-5',
+        'release-notes/v1-5-1',
       ],
     },
   ],

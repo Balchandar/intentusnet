@@ -6,7 +6,7 @@
 
 ---
 
-[![Version](https://img.shields.io/badge/version-4.5.0-blue.svg)](#)
+[![Version](https://img.shields.io/badge/version-1.5.1-blue.svg)](#)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.9%2B-blue)](#)
 [![MCP](https://img.shields.io/badge/MCP-compatible-brightgreen)](#)
@@ -15,9 +15,9 @@
 
 ---
 
-## What's New in v4.5
+## What's New in v1.5.1
 
-IntentusNet v4.5 introduces **provable determinism** — the execution runtime now includes built-in mechanisms to verify, enforce, and prove that execution behavior is deterministic across runs, environments, and model swaps.
+IntentusNet v1.5.1 introduces **provable determinism** — the execution runtime now includes built-in mechanisms to verify, enforce, and prove that execution behavior is deterministic across runs, environments, and model swaps.
 
 | Feature | Description |
 |---------|-------------|
@@ -213,17 +213,17 @@ IntentusNet provides an explicit execution contract:
 | Structured Errors            | **Provided**          | Typed error codes, no silent failures            |
 | Crash Recovery               | **Provided**          | WAL-backed execution state & recovery            |
 | Signed WAL (REGULATED)       | **Provided**          | Ed25519 per-entry signatures for audit trail     |
-| Execution Fingerprinting     | **Provided (v4.5)**   | SHA-256 fingerprint proves deterministic execution |
-| Deterministic-Safe CI/CD     | **Provided (v4.5)**   | 9-gate pipeline enforces determinism before deploy |
-| Drift Detection              | **Provided (v4.5)**   | Automatic nondeterminism detection via fingerprints |
+| Execution Fingerprinting     | **Provided (v1.5.1)**   | SHA-256 fingerprint proves deterministic execution |
+| Deterministic-Safe CI/CD     | **Provided (v1.5.1)**   | 9-gate pipeline enforces determinism before deploy |
+| Drift Detection              | **Provided (v1.5.1)**   | Automatic nondeterminism detection via fingerprints |
 
 Full guarantee details: https://intentusnet.com/docs/guarantees
 
 ---
 
-## Provable Determinism (v4.5)
+## Provable Determinism (v1.5.1)
 
-IntentusNet v4.5 treats determinism as a **provable property**, not just a design goal.
+IntentusNet v1.5.1 treats determinism as a **provable property**, not just a design goal.
 
 ### Execution Fingerprinting
 
@@ -483,7 +483,7 @@ IntentusNet is a **deterministic execution runtime**, not an autonomous agent fr
 - No task planning or reasoning
 - No evaluation of model outputs
 - No replacement for workflow engines
-- No distributed consensus in v4
+- No distributed consensus in v1
 
 ### Determinism Boundary
 
@@ -496,7 +496,7 @@ Non-deterministic model behavior is detected, recorded, and surfaced — never h
 
 See [docs/roadmap.md](docs/roadmap.md) for the full roadmap.
 
-**Current: v4.5** — Provable Determinism
+**Current: v1.5.1** — Provable Determinism
 
 - Execution fingerprinting
 - Deterministic-safe CI/CD (9 gates)

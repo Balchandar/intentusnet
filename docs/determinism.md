@@ -2,7 +2,7 @@
 
 ## Overview
 
-IntentusNet v4.5 treats determinism as a **provable property**, not just a design goal. The runtime includes built-in mechanisms to verify, enforce, and prove that execution behavior is deterministic across runs, environments, and model swaps.
+IntentusNet v1.5.1 treats determinism as a **provable property**, not just a design goal. The runtime includes built-in mechanisms to verify, enforce, and prove that execution behavior is deterministic across runs, environments, and model swaps.
 
 This document covers:
 
@@ -188,4 +188,4 @@ These nondeterministic inputs are **recorded** so they can be inspected, but the
 - [CI/CD Gate Specification](ci-cd.md)
 - [WAL Format](wal-format.md)
 - [Runtime Determinism Core](runtime-determinism.md)
-- [Release Notes v4.5](release-notes/v4.5.md)
+- [Release Notes v1.5.1](release-notes/v1.5.1.md)

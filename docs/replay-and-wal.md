@@ -109,7 +109,7 @@ response = engine.retrieve(execution_id)
 
 ### WAL Replay Verification
 
-IntentusNet v4.5 adds **replay verification** — proving that the stored response matches the original execution:
+IntentusNet v1.5.1 adds **replay verification** — proving that the stored response matches the original execution:
 
 1. Execute an intent (produces execution record + response hash)
 2. Retrieve via `HistoricalResponseEngine` (produces replay hash)
