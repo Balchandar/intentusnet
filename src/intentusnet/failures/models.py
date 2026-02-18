@@ -76,11 +76,12 @@ class StructuredFailure:
 
     # Context
     execution_id: str
-    step_id: Optional[str] = None
-    agent_name: Optional[str] = None
-
+    
     # Details
     reason: str
+    
+    step_id: Optional[str] = None
+    agent_name: Optional[str] = None
     details: Dict[str, Any] = field(default_factory=dict)
 
     # Recovery
