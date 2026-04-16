@@ -112,6 +112,13 @@ class WALEntryType(str, Enum):
     AGENT_INVOCATION_START = "agent.invocation_start"
     AGENT_INVOCATION_END = "agent.invocation_end"
 
+    # Security Kernel (v1.5.2+)
+    SECURITY_AUTHORIZED = "security.authorized"       # intent passed all kernel checks
+    SECURITY_BLOCKED = "security.blocked"             # intent blocked by kernel
+    SIDE_EFFECT_AUTHORIZED = "side_effect.authorized" # side-effect call approved
+    ANOMALY_DETECTED = "anomaly.detected"             # fingerprint anomaly logged
+    FORENSIC_AUDIT = "forensic.audit"                 # tamper-evident audit entry
+
 
 class ExecutionState(str, Enum):
     """

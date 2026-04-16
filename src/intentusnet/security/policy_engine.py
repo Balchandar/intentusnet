@@ -2,8 +2,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Dict, Iterable, List, Optional, Pattern
 import re
+
+# Guard against ReDoS: truncate payload values before regex matching.
+# Legitimate policy values are never this long; truncation is safe.
+_PAYLOAD_REGEX_MAX_INPUT_LEN = 4096
 
 
 class PolicyAction(str, Enum):
@@ -49,6 +53,10 @@ class PolicyRule:
     rate_limit_key_template: Optional[str] = None
 
     max_timeout_ms: Optional[int] = None
+
+    # Compiled regex cache (populated by PolicyEngine.from_dict; not serialized).
+    # Avoids re-compiling on every evaluate() call and enables early syntax errors.
+    _compiled_regex: Dict[str, Any] = field(default_factory=dict, repr=False, compare=False)
 
 
 @dataclass
@@ -149,22 +157,31 @@ class PolicyEngine:
             except Exception:
                 action = PolicyAction.DENY
 
-            rules.append(
-                PolicyRule(
-                    id=rid,
-                    action=action,
-                    intents=list(r.get("intents") or []),
-                    agents=list(r.get("agents") or []),
-                    roles=list(r.get("roles") or []),
-                    tenants=list(r.get("tenants") or []),
-                    description=r.get("description", ""),
-                    priority=int(r.get("priority") or 0),
-                    payload_regex=dict(r.get("payload_regex") or {}),
-                    rate_limit_per_minute=r.get("rate_limit_per_minute"),
-                    rate_limit_key_template=r.get("rate_limit_key_template"),
-                    max_timeout_ms=r.get("max_timeout_ms"),
-                )
+            raw_regex: Dict[str, str] = dict(r.get("payload_regex") or {})
+            compiled_regex: Dict[str, Any] = {}
+            for field_name, pattern in raw_regex.items():
+                try:
+                    compiled_regex[field_name] = re.compile(pattern, flags=re.IGNORECASE)
+                except re.error:
+                    # Invalid pattern — treat as non-matching (safe default)
+                    compiled_regex[field_name] = None
+
+            rule = PolicyRule(
+                id=rid,
+                action=action,
+                intents=list(r.get("intents") or []),
+                agents=list(r.get("agents") or []),
+                roles=list(r.get("roles") or []),
+                tenants=list(r.get("tenants") or []),
+                description=r.get("description", ""),
+                priority=int(r.get("priority") or 0),
+                payload_regex=raw_regex,
+                rate_limit_per_minute=r.get("rate_limit_per_minute"),
+                rate_limit_key_template=r.get("rate_limit_key_template"),
+                max_timeout_ms=r.get("max_timeout_ms"),
             )
+            rule._compiled_regex = compiled_regex
+            rules.append(rule)
 
         # Rules evaluated in given order (could sort by priority if needed)
         return cls(rules, default_action=default_action)
@@ -225,13 +242,23 @@ class PolicyEngine:
         if rule.tenants and ctx.tenant not in rule.tenants:
             return False
 
-        # payload_regex
+        # payload_regex — patterns are pre-compiled at rule-load time (see from_dict).
+        # Input is truncated to _PAYLOAD_REGEX_MAX_INPUT_LEN to prevent ReDoS.
         if rule.payload_regex:
-            for field, pattern in rule.payload_regex.items():
-                value = ctx.payload.get(field)
+            for field_name, pattern in rule.payload_regex.items():
+                value = ctx.payload.get(field_name)
                 value_str = "" if value is None else str(value)
-                if not re.search(pattern, value_str, flags=re.IGNORECASE):
+                value_str = value_str[:_PAYLOAD_REGEX_MAX_INPUT_LEN]
+                compiled: Any = rule._compiled_regex.get(field_name) if hasattr(rule, "_compiled_regex") else None
+                if compiled is not None:
+                    if not compiled.search(value_str):
+                        return False
+                elif compiled is None and hasattr(rule, "_compiled_regex") and field_name in rule._compiled_regex:
+                    # compile() failed for this pattern — treat as non-matching (safe default)
                     return False
+                else:
+                    if not re.search(pattern, value_str, flags=re.IGNORECASE):
+                        return False
 
         return True
 

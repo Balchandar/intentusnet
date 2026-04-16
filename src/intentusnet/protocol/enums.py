@@ -42,3 +42,10 @@ class ErrorCode(Enum):
     PAYLOAD_TOO_LARGE = "PAYLOAD_TOO_LARGE"
     WORKFLOW_ABORTED = "WORKFLOW_ABORTED"
     EMCL_FAILURE = "EMCL_FAILURE"
+
+    # Security Kernel error codes (v1.5.2+)
+    SIDE_EFFECT_BLOCKED = "SIDE_EFFECT_BLOCKED"     # undeclared side-effect attempted
+    ANOMALY_DETECTED = "ANOMALY_DETECTED"           # execution fingerprint anomaly
+    IDEMPOTENT_REPLAY = "IDEMPOTENT_REPLAY"         # exact-once duplicate detected
+    CAPABILITY_VIOLATION = "CAPABILITY_VIOLATION"   # capability contract breach
+    MCP_VIOLATION = "MCP_VIOLATION"                 # tool not mapped to registry

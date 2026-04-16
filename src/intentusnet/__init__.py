@@ -27,7 +27,16 @@ from .recording.models import ExecutionRecord
 from .recording.replay import ReplayEngine
 from .recording.store import FileExecutionStore
 
-__version__ = "1.5.1"
+from .security.config import SecurityConfig
+from .security.kernel import SecurityKernelMiddleware
+from .security.mcp_validation import MCPValidationMiddleware
+from .security.fingerprint import ExecutionFingerprintEngine, AnomalyClass, AnomalyResult
+from .security.side_effects import ISideEffectAdapter, SideEffectQuarantine, SideEffectNotAuthorizedError
+from .security.audit import ForensicAuditEntry, ForensicAuditLog
+from .wal.integrity import verify_wal_integrity, WALIntegrityResult
+from .protocol.agent import CapabilityMetadata, LatencyProfile
+
+__version__ = "1.5.2"
 
 __all__ = [
     # Core runtime
@@ -67,8 +76,29 @@ __all__ = [
     "ReplayEngine",
     "FileExecutionStore",
 
-    # Security
+    # Security (Phase I)
     "EMCLProvider",
+
+    # Security Kernel (v1.5.2)
+    "SecurityConfig",
+    "SecurityKernelMiddleware",
+    "MCPValidationMiddleware",
+    "ExecutionFingerprintEngine",
+    "AnomalyClass",
+    "AnomalyResult",
+    "ISideEffectAdapter",
+    "SideEffectQuarantine",
+    "SideEffectNotAuthorizedError",
+    "ForensicAuditEntry",
+    "ForensicAuditLog",
+
+    # WAL Integrity API
+    "verify_wal_integrity",
+    "WALIntegrityResult",
+
+    # Capability Metadata
+    "CapabilityMetadata",
+    "LatencyProfile",
 
     # Version
     "__version__",
