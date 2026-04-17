@@ -27,6 +27,21 @@ from .recording.models import ExecutionRecord
 from .recording.replay import ReplayEngine
 from .recording.store import FileExecutionStore
 
+from .security.event_bus import (
+    SecurityEventType,
+    SecurityEvent,
+    SecurityEventBus,
+)
+from .security.causality_index import (
+    ExecutionNode,
+    CausalityIndex,
+)
+from .security.backpressure import (
+    BackpressureMetrics,
+    BackpressureTransition,
+    BackpressureManager,
+    from_config as backpressure_from_config,
+)
 from .security.types import (
     ExecutionIsolationMode,
     ReplayMode,
@@ -91,6 +106,21 @@ __all__ = [
 
     # Security (Phase I)
     "EMCLProvider",
+
+    # Security Kernel (v2.1 — Event Bus)
+    "SecurityEventType",
+    "SecurityEvent",
+    "SecurityEventBus",
+
+    # Security Kernel (v2.1 — Causality)
+    "ExecutionNode",
+    "CausalityIndex",
+
+    # Security Kernel (v2.1 — Backpressure)
+    "BackpressureMetrics",
+    "BackpressureTransition",
+    "BackpressureManager",
+    "backpressure_from_config",
 
     # Security Kernel (v2.1 — Types & Signals)
     "ExecutionIsolationMode",

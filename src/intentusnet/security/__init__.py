@@ -18,6 +18,9 @@ Security Kernel (v1.5.2):
 Security Kernel (v2.1):
 - types: Shared enums/dataclasses (PolicyVersion, DegradationState, …)
 - signals: Dual-baseline EWMA + four-signal decomposition
+- event_bus: Unified security event model + in-process dispatcher
+- causality_index: Derivation-based execution graph with segmented storage
+- backpressure: Degradation state machine (NORMAL → FAIL_SAFE)
 """
 
 from .types import (
@@ -26,6 +29,24 @@ from .types import (
     DegradationState,
     ResourceLimits,
     PolicyVersion,
+)
+
+from .event_bus import (
+    SecurityEventType,
+    SecurityEvent,
+    SecurityEventBus,
+)
+
+from .causality_index import (
+    ExecutionNode,
+    CausalityIndex,
+)
+
+from .backpressure import (
+    BackpressureMetrics,
+    BackpressureTransition,
+    BackpressureManager,
+    from_config as backpressure_from_config,
 )
 
 from .signals import (
@@ -78,6 +99,21 @@ __all__ = [
     "DegradationState",
     "ResourceLimits",
     "PolicyVersion",
+
+    # v2.1 Event Bus
+    "SecurityEventType",
+    "SecurityEvent",
+    "SecurityEventBus",
+
+    # v2.1 Causality
+    "ExecutionNode",
+    "CausalityIndex",
+
+    # v2.1 Backpressure
+    "BackpressureMetrics",
+    "BackpressureTransition",
+    "BackpressureManager",
+    "backpressure_from_config",
 
     # v2.1 Signals
     "DualBaselineResult",
