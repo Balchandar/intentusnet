@@ -21,6 +21,7 @@ Security Kernel (v2.1):
 - event_bus: Unified security event model + in-process dispatcher
 - causality_index: Derivation-based execution graph with segmented storage
 - backpressure: Degradation state machine (NORMAL → FAIL_SAFE)
+- fingerprint_v2: Adaptive dual-baseline EWMA fingerprint engine
 """
 
 from .types import (
@@ -29,6 +30,11 @@ from .types import (
     DegradationState,
     ResourceLimits,
     PolicyVersion,
+)
+
+from .fingerprint_v2 import (
+    EWMAProfile,
+    AdaptiveFingerprintEngineV2,
 )
 
 from .event_bus import (
@@ -99,6 +105,10 @@ __all__ = [
     "DegradationState",
     "ResourceLimits",
     "PolicyVersion",
+
+    # v2.1 Adaptive Fingerprint Engine
+    "EWMAProfile",
+    "AdaptiveFingerprintEngineV2",
 
     # v2.1 Event Bus
     "SecurityEventType",

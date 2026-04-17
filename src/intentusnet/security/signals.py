@@ -196,6 +196,20 @@ class _BaselineRegistry:
                 self._states[key] = _EWMAState()
             return self._states[key]
 
+    def peek(self, intent: str, dimension: str) -> Optional[DualBaselineResult]:
+        """Return the current baseline snapshot without updating it."""
+        key = (intent, dimension)
+        with self._lock:
+            state = self._states.get(key)
+            if state is None:
+                return None
+            return state.peek()
+
+    def known_intents(self) -> List[str]:
+        """Return deduplicated list of intent names that have baseline state."""
+        with self._lock:
+            return list({k[0] for k in self._states})
+
     def reset_intent(self, intent: str) -> None:
         with self._lock:
             keys = [k for k in self._states if k[0] == intent]

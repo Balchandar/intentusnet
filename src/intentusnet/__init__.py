@@ -27,6 +27,10 @@ from .recording.models import ExecutionRecord
 from .recording.replay import ReplayEngine
 from .recording.store import FileExecutionStore
 
+from .security.fingerprint_v2 import (
+    EWMAProfile,
+    AdaptiveFingerprintEngineV2,
+)
 from .security.event_bus import (
     SecurityEventType,
     SecurityEvent,
@@ -106,6 +110,10 @@ __all__ = [
 
     # Security (Phase I)
     "EMCLProvider",
+
+    # Security Kernel (v2.1 — Adaptive Fingerprint)
+    "EWMAProfile",
+    "AdaptiveFingerprintEngineV2",
 
     # Security Kernel (v2.1 — Event Bus)
     "SecurityEventType",
