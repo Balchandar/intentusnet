@@ -14,7 +14,26 @@ Security Kernel (v1.5.2):
 - audit: ForensicAuditLog — tamper-evident compliance audit trail
 - kernel: SecurityKernelMiddleware — central enforcement middleware
 - mcp_validation: MCPValidationMiddleware — MCP tool → Registry enforcement
+
+Security Kernel (v2.1):
+- types: Shared enums/dataclasses (PolicyVersion, DegradationState, …)
+- signals: Dual-baseline EWMA + four-signal decomposition
 """
+
+from .types import (
+    ExecutionIsolationMode,
+    ReplayMode,
+    DegradationState,
+    ResourceLimits,
+    PolicyVersion,
+)
+
+from .signals import (
+    DualBaselineResult,
+    DecomposedSignalSet,
+    compute as compute_signals,
+    reset_intent_baselines,
+)
 
 from .compliance import (
     ComplianceLevel,
@@ -53,6 +72,19 @@ from .kernel import SecurityKernelMiddleware
 from .mcp_validation import MCPValidationMiddleware
 
 __all__ = [
+    # v2.1 Types
+    "ExecutionIsolationMode",
+    "ReplayMode",
+    "DegradationState",
+    "ResourceLimits",
+    "PolicyVersion",
+
+    # v2.1 Signals
+    "DualBaselineResult",
+    "DecomposedSignalSet",
+    "compute_signals",
+    "reset_intent_baselines",
+
     # Phase I
     "ComplianceLevel",
     "ComplianceConfig",

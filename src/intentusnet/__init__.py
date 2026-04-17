@@ -27,6 +27,19 @@ from .recording.models import ExecutionRecord
 from .recording.replay import ReplayEngine
 from .recording.store import FileExecutionStore
 
+from .security.types import (
+    ExecutionIsolationMode,
+    ReplayMode,
+    DegradationState,
+    ResourceLimits,
+    PolicyVersion,
+)
+from .security.signals import (
+    DualBaselineResult,
+    DecomposedSignalSet,
+    compute as compute_signals,
+    reset_intent_baselines,
+)
 from .security.config import SecurityConfig
 from .security.kernel import SecurityKernelMiddleware
 from .security.mcp_validation import MCPValidationMiddleware
@@ -78,6 +91,17 @@ __all__ = [
 
     # Security (Phase I)
     "EMCLProvider",
+
+    # Security Kernel (v2.1 — Types & Signals)
+    "ExecutionIsolationMode",
+    "ReplayMode",
+    "DegradationState",
+    "ResourceLimits",
+    "PolicyVersion",
+    "DualBaselineResult",
+    "DecomposedSignalSet",
+    "compute_signals",
+    "reset_intent_baselines",
 
     # Security Kernel (v1.5.2)
     "SecurityConfig",
