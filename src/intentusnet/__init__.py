@@ -59,6 +59,19 @@ from .security.signals import (
     compute as compute_signals,
     reset_intent_baselines,
 )
+from .security.circuit_breaker_v2 import (
+    CircuitState,
+    CircuitTransition,
+    CircuitBreaker,
+)
+from .security.capability_governor_v2 import (
+    SuspensionEvent,
+    CapabilityGovernor,
+)
+from .security.policy_engine_v2 import (
+    PolicyDecisionV2,
+    PolicyEngineV2,
+)
 from .security.config import SecurityConfig
 from .security.kernel import SecurityKernelMiddleware
 from .security.mcp_validation import MCPValidationMiddleware
@@ -140,6 +153,19 @@ __all__ = [
     "DecomposedSignalSet",
     "compute_signals",
     "reset_intent_baselines",
+
+    # Security Kernel (v2.1 — Circuit Breaker)
+    "CircuitState",
+    "CircuitTransition",
+    "CircuitBreaker",
+
+    # Security Kernel (v2.1 — Capability Governor)
+    "SuspensionEvent",
+    "CapabilityGovernor",
+
+    # Security Kernel (v2.1 — Policy Engine v2)
+    "PolicyDecisionV2",
+    "PolicyEngineV2",
 
     # Security Kernel (v1.5.2)
     "SecurityConfig",

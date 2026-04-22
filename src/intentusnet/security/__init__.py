@@ -22,6 +22,9 @@ Security Kernel (v2.1):
 - causality_index: Derivation-based execution graph with segmented storage
 - backpressure: Degradation state machine (NORMAL → FAIL_SAFE)
 - fingerprint_v2: Adaptive dual-baseline EWMA fingerprint engine
+- circuit_breaker_v2: Per-intent circuit breaker on latency+error signals
+- capability_governor_v2: Capability suspension on behaviour signal
+- policy_engine_v2: Versioned policy engine with hot-reload
 """
 
 from .types import (
@@ -60,6 +63,22 @@ from .signals import (
     DecomposedSignalSet,
     compute as compute_signals,
     reset_intent_baselines,
+)
+
+from .circuit_breaker_v2 import (
+    CircuitState,
+    CircuitTransition,
+    CircuitBreaker,
+)
+
+from .capability_governor_v2 import (
+    SuspensionEvent,
+    CapabilityGovernor,
+)
+
+from .policy_engine_v2 import (
+    PolicyDecisionV2,
+    PolicyEngineV2,
 )
 
 from .compliance import (
@@ -130,6 +149,19 @@ __all__ = [
     "DecomposedSignalSet",
     "compute_signals",
     "reset_intent_baselines",
+
+    # v2.1 Circuit Breaker
+    "CircuitState",
+    "CircuitTransition",
+    "CircuitBreaker",
+
+    # v2.1 Capability Governor
+    "SuspensionEvent",
+    "CapabilityGovernor",
+
+    # v2.1 Policy Engine v2
+    "PolicyDecisionV2",
+    "PolicyEngineV2",
 
     # Phase I
     "ComplianceLevel",
