@@ -104,6 +104,7 @@ from .security.wal_sampler import (
     SamplerPassResult,
     WALSampler,
 )
+from .security.kernel_v2 import SecurityKernelV2
 from .security.config import SecurityConfig
 from .security.kernel import SecurityKernelMiddleware
 from .security.mcp_validation import MCPValidationMiddleware
@@ -230,6 +231,9 @@ __all__ = [
     # Security Kernel (v2.1 — WAL Sampler)
     "SamplerPassResult",
     "WALSampler",
+
+    # Security Kernel (v2.1 — Unified Middleware)
+    "SecurityKernelV2",
 
     # Security Kernel (v1.5.2)
     "SecurityConfig",

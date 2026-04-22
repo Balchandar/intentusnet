@@ -31,6 +31,7 @@ Security Kernel (v2.1):
 - replay_engine: Deterministic re-execution comparison (SHADOW/AUDIT/ENFORCE)
 - trust_anchor_v2: External confirmation quorum for WAL entry hashes
 - wal_sampler: Periodic background WAL integrity sampling
+- kernel_v2: SecurityKernelV2 — full v2.1 middleware wiring
 """
 
 from .types import (
@@ -124,6 +125,8 @@ from .wal_sampler import (
     SamplerPassResult,
     WALSampler,
 )
+
+from .kernel_v2 import SecurityKernelV2
 
 from .compliance import (
     ComplianceLevel,
@@ -238,6 +241,9 @@ __all__ = [
     # v2.1 WAL Sampler
     "SamplerPassResult",
     "WALSampler",
+
+    # v2.1 Kernel
+    "SecurityKernelV2",
 
     # Phase I
     "ComplianceLevel",
