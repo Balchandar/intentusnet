@@ -72,6 +72,15 @@ from .security.policy_engine_v2 import (
     PolicyDecisionV2,
     PolicyEngineV2,
 )
+from .security.resource_governor import (
+    ResourceMeasurement,
+    ResourceBreach,
+    ResourceGovernor,
+)
+from .security.isolation_manager import (
+    IsolationResult,
+    IsolationManager,
+)
 from .security.config import SecurityConfig
 from .security.kernel import SecurityKernelMiddleware
 from .security.mcp_validation import MCPValidationMiddleware
@@ -166,6 +175,15 @@ __all__ = [
     # Security Kernel (v2.1 — Policy Engine v2)
     "PolicyDecisionV2",
     "PolicyEngineV2",
+
+    # Security Kernel (v2.1 — Resource Governor)
+    "ResourceMeasurement",
+    "ResourceBreach",
+    "ResourceGovernor",
+
+    # Security Kernel (v2.1 — Isolation Manager)
+    "IsolationResult",
+    "IsolationManager",
 
     # Security Kernel (v1.5.2)
     "SecurityConfig",

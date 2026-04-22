@@ -25,6 +25,8 @@ Security Kernel (v2.1):
 - circuit_breaker_v2: Per-intent circuit breaker on latency+error signals
 - capability_governor_v2: Capability suspension on behaviour signal
 - policy_engine_v2: Versioned policy engine with hot-reload
+- resource_governor: Advisory resource measurement and limit checking
+- isolation_manager: INPROCESS/SUBPROCESS execution isolation wrapper
 """
 
 from .types import (
@@ -79,6 +81,17 @@ from .capability_governor_v2 import (
 from .policy_engine_v2 import (
     PolicyDecisionV2,
     PolicyEngineV2,
+)
+
+from .resource_governor import (
+    ResourceMeasurement,
+    ResourceBreach,
+    ResourceGovernor,
+)
+
+from .isolation_manager import (
+    IsolationResult,
+    IsolationManager,
 )
 
 from .compliance import (
@@ -162,6 +175,15 @@ __all__ = [
     # v2.1 Policy Engine v2
     "PolicyDecisionV2",
     "PolicyEngineV2",
+
+    # v2.1 Resource Governor
+    "ResourceMeasurement",
+    "ResourceBreach",
+    "ResourceGovernor",
+
+    # v2.1 Isolation Manager
+    "IsolationResult",
+    "IsolationManager",
 
     # Phase I
     "ComplianceLevel",
