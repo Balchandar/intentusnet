@@ -29,6 +29,8 @@ Security Kernel (v2.1):
 - isolation_manager: INPROCESS/SUBPROCESS execution isolation wrapper
 - side_effect_stubs: Test-double adapters (Null/Recording/Fixed/Error/Interceptor)
 - replay_engine: Deterministic re-execution comparison (SHADOW/AUDIT/ENFORCE)
+- trust_anchor_v2: External confirmation quorum for WAL entry hashes
+- wal_sampler: Periodic background WAL integrity sampling
 """
 
 from .types import (
@@ -109,6 +111,18 @@ from .replay_engine import (
     ReplayDivergenceError,
     ReplayComparisonResult,
     SecurityReplayEngine,
+)
+
+from .trust_anchor_v2 import (
+    ITrustAnchorAdapter,
+    TrustAnchorConfirmation,
+    AnchorStatus,
+    TrustAnchorManager,
+)
+
+from .wal_sampler import (
+    SamplerPassResult,
+    WALSampler,
 )
 
 from .compliance import (
@@ -214,6 +228,16 @@ __all__ = [
     "ReplayDivergenceError",
     "ReplayComparisonResult",
     "SecurityReplayEngine",
+
+    # v2.1 Trust Anchor
+    "ITrustAnchorAdapter",
+    "TrustAnchorConfirmation",
+    "AnchorStatus",
+    "TrustAnchorManager",
+
+    # v2.1 WAL Sampler
+    "SamplerPassResult",
+    "WALSampler",
 
     # Phase I
     "ComplianceLevel",

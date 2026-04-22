@@ -94,6 +94,16 @@ from .security.replay_engine import (
     ReplayComparisonResult,
     SecurityReplayEngine,
 )
+from .security.trust_anchor_v2 import (
+    ITrustAnchorAdapter,
+    TrustAnchorConfirmation,
+    AnchorStatus,
+    TrustAnchorManager,
+)
+from .security.wal_sampler import (
+    SamplerPassResult,
+    WALSampler,
+)
 from .security.config import SecurityConfig
 from .security.kernel import SecurityKernelMiddleware
 from .security.mcp_validation import MCPValidationMiddleware
@@ -210,6 +220,16 @@ __all__ = [
     "ReplayDivergenceError",
     "ReplayComparisonResult",
     "SecurityReplayEngine",
+
+    # Security Kernel (v2.1 — Trust Anchor)
+    "ITrustAnchorAdapter",
+    "TrustAnchorConfirmation",
+    "AnchorStatus",
+    "TrustAnchorManager",
+
+    # Security Kernel (v2.1 — WAL Sampler)
+    "SamplerPassResult",
+    "WALSampler",
 
     # Security Kernel (v1.5.2)
     "SecurityConfig",
