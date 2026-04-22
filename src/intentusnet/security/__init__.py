@@ -27,6 +27,8 @@ Security Kernel (v2.1):
 - policy_engine_v2: Versioned policy engine with hot-reload
 - resource_governor: Advisory resource measurement and limit checking
 - isolation_manager: INPROCESS/SUBPROCESS execution isolation wrapper
+- side_effect_stubs: Test-double adapters (Null/Recording/Fixed/Error/Interceptor)
+- replay_engine: Deterministic re-execution comparison (SHADOW/AUDIT/ENFORCE)
 """
 
 from .types import (
@@ -92,6 +94,21 @@ from .resource_governor import (
 from .isolation_manager import (
     IsolationResult,
     IsolationManager,
+)
+
+from .side_effect_stubs import (
+    SideEffectCall,
+    NullSideEffectAdapter,
+    RecordingStubAdapter,
+    FixedResponseStubAdapter,
+    ErrorStubAdapter,
+    SideEffectInterceptor,
+)
+
+from .replay_engine import (
+    ReplayDivergenceError,
+    ReplayComparisonResult,
+    SecurityReplayEngine,
 )
 
 from .compliance import (
@@ -184,6 +201,19 @@ __all__ = [
     # v2.1 Isolation Manager
     "IsolationResult",
     "IsolationManager",
+
+    # v2.1 Side-Effect Stubs
+    "SideEffectCall",
+    "NullSideEffectAdapter",
+    "RecordingStubAdapter",
+    "FixedResponseStubAdapter",
+    "ErrorStubAdapter",
+    "SideEffectInterceptor",
+
+    # v2.1 Security Replay Engine
+    "ReplayDivergenceError",
+    "ReplayComparisonResult",
+    "SecurityReplayEngine",
 
     # Phase I
     "ComplianceLevel",

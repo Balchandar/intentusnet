@@ -81,6 +81,19 @@ from .security.isolation_manager import (
     IsolationResult,
     IsolationManager,
 )
+from .security.side_effect_stubs import (
+    SideEffectCall,
+    NullSideEffectAdapter,
+    RecordingStubAdapter,
+    FixedResponseStubAdapter,
+    ErrorStubAdapter,
+    SideEffectInterceptor,
+)
+from .security.replay_engine import (
+    ReplayDivergenceError,
+    ReplayComparisonResult,
+    SecurityReplayEngine,
+)
 from .security.config import SecurityConfig
 from .security.kernel import SecurityKernelMiddleware
 from .security.mcp_validation import MCPValidationMiddleware
@@ -184,6 +197,19 @@ __all__ = [
     # Security Kernel (v2.1 — Isolation Manager)
     "IsolationResult",
     "IsolationManager",
+
+    # Security Kernel (v2.1 — Side-Effect Stubs)
+    "SideEffectCall",
+    "NullSideEffectAdapter",
+    "RecordingStubAdapter",
+    "FixedResponseStubAdapter",
+    "ErrorStubAdapter",
+    "SideEffectInterceptor",
+
+    # Security Kernel (v2.1 — Security Replay Engine)
+    "ReplayDivergenceError",
+    "ReplayComparisonResult",
+    "SecurityReplayEngine",
 
     # Security Kernel (v1.5.2)
     "SecurityConfig",
