@@ -6,7 +6,7 @@ description: Understanding IntentusNet - a deterministic execution runtime for m
 
 # What is IntentusNet
 
-IntentusNet is an open-source, language-agnostic **execution runtime for multi-agent systems** designed to make routing, fallback, and failure behavior **deterministic, replayable, explainable, and production-operable**.
+IntentusNet is an open-source **runtime layer for AI execution** that adds determinism, observability, and enforcement to multi-agent and tool-driven systems. It makes routing, failure handling, and behavioral drift **detectable, recorded, and enforceable**.
 
 :::info The Core Premise
 The model may change. The execution must not.
@@ -14,13 +14,15 @@ The model may change. The execution must not.
 
 ## What IntentusNet Does
 
-IntentusNet sits between your agent orchestration layer and the actual agent execution. It provides:
+IntentusNet sits between your orchestration layer and actual agent execution. It provides:
 
-1. **Deterministic Routing** — Given the same intent and set of agents, the router always selects agents in the same order
-2. **Execution Recording** — Every execution is captured as an immutable record with stable hashes
-3. **Replay Without Re-execution** — Recorded executions can be replayed to return the exact same output without calling models again
-4. **Policy Filtering** — Fine-grained control over which targets are allowed, with partial continuation support
-5. **Structured Observability** — Every routing decision produces trace spans and structured logs
+1. **Deterministic Routing** — Given the same intent and agents, the router always selects in the same order
+2. **Execution Recording** — Every execution is captured as an immutable record with a stable SHA-256 hash
+3. **Behavioral Signals** — Four independent EWMA signal channels (latency, error, behavior, policy) computed per execution
+4. **Enforcement** — Circuit breaker and capability governor act on signals to block or suspend misbehaving intents
+5. **Replay Comparison** — Re-run an execution against the live system and compare hashes; any field change is detected
+6. **WAL Integrity** — Append-only, hash-chained write-ahead log; verify the chain at any time
+7. **Policy Filtering** — Fine-grained control over which targets are allowed, with partial continuation support
 
 ## What IntentusNet Is NOT
 

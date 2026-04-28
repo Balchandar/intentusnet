@@ -1,0 +1,225 @@
+---
+sidebar_position: 5
+title: Four-Act Demo
+description: End-to-end demo showing baseline execution, instrumentation, replay, and divergence detection
+---
+
+# Four-Act Demo
+
+This demo runs a single workload — "summarize last month's customer complaints" — through four states:
+
+1. Baseline execution with no observability
+2. The same workload through IntentusNet (trace + signals + enforcement)
+3. Deterministic replay → MATCH
+4. Mutated tool response → DIVERGENCE DETECTED
+
+Total runtime: under 5 seconds. All artifacts are written to `.intentusnet/demo/`.
+
+## Running the Demo
+
+```bash
+# From the repo root
+PYTHONPATH=src python demo/run_demo.py
+```
+
+Optional flags:
+
+```bash
+python demo/run_demo.py \
+  --prompt "Summarize last month's customer complaints" \
+  --record-dir .intentusnet/demo/records \
+  --wal-dir    .intentusnet/demo/wal
+```
+
+---
+
+## Act 1 — Baseline Execution
+
+The workload runs directly: `MockLLMAgent.plan()` → `MockToolAgent.query()` → formatted answer. No tracing, no signals, no record written.
+
+```
+Running the workload directly: model → tool → answer.
+No execution trace, no signals, no replay capability.
+
+--- Baseline output ---
+  prompt                 Summarize last month's customer complaints
+  answer                 Found 3 complaints; top issue: duplicate charge
+  wall_time_ms           47.35
+[!] Without IntentusNet there is nothing to inspect.
+[!] If the tool silently changed, no one would know.
+```
+
+The yellow warning is the point: if the tool returns different data next week, there is nothing to compare against.
+
+---
+
+## Act 2 — IntentusNet Execution
+
+The same workload runs through the intent kernel. `SecurityEventBus`, `CircuitBreaker`, `CapabilityGovernor`, `CausalityIndex`, and `compute_signals()` are wired together. Every step is captured in an `ExecutionRecord` and a WAL.
+
+```
+--- Execution trace (intent → agent → tool) ---
+  ✓ seq= 1  intent         summarize_complaints  latency=  0.00 ms
+  ✓ seq= 2  llm-planner    plan        latency= 35.13 ms
+  ✓ seq= 3  complaints_db  query       latency= 12.02 ms
+```
+
+### Decomposed Signals
+
+Four independent EWMA channels are computed from the execution:
+
+```
+--- Decomposed signals (independent channels) ---
+  latency_signal         0.0476  ████·····················
+  error_signal           0.0474  ████·····················
+  behavior_signal        0.0476  ████·····················
+  policy_signal          0.0000  ·························
+```
+
+Each signal feeds only its designated subsystem:
+
+| Signal | Drives |
+|--------|--------|
+| `latency_signal` | `CircuitBreaker` |
+| `error_signal` | `CircuitBreaker` |
+| `behavior_signal` | `CapabilityGovernor` |
+| `policy_signal` | Policy enforcement layer |
+
+### Enforcement Snapshot
+
+```
+--- Enforcement snapshot ---
+  circuit_state          closed
+  intent_allowed         True
+  event_bus_drops        0
+```
+
+`circuit_state: closed` means the circuit breaker has not tripped. `intent_allowed: True` means the capability governor has not suspended this intent.
+
+### Persistence
+
+```
+--- Persistence ---
+  execution_id           3a7f1c2d-8b4e-4f9a-a123-5e6d7890bcef
+  record_path            .intentusnet/demo/records/3a7f1c2d-....json
+  wal_path               .intentusnet/demo/wal/3a7f1c2d-....wal
+```
+
+The record contains: envelope hash, router decision, per-step events, and `finalResponse`. The WAL is an append-only JSONL with a hash chain linking each entry to the previous one.
+
+---
+
+## Act 3 — Replay (MATCH)
+
+The recorded `ExecutionRecord` is loaded from disk. `SecurityReplayEngine` in `SHADOW` mode re-runs the live callable and compares hashes.
+
+```
+--- Replay result ---
+  execution_id           3a7f1c2d-8b4e-4f9a-a123-5e6d7890bcef
+  original_hash          7a3d8f2c1e9b04a6d5…
+  replay_hash            7a3d8f2c1e9b04a6d5…
+  wall_seconds           0.0481
+
+Replay Status: MATCH ✅
+```
+
+Hashes are computed with `stable_hash()`: `SHA-256(json.dumps(obj, sort_keys=True, separators=(",", ":")))`. Key ordering and float precision differences are eliminated before comparison.
+
+---
+
+## Act 4 — Mutation → Divergence Detected
+
+A bug ships: `MockToolAgent(mutation=lambda r: {**r, "total": 95})`. The tool now returns `total=95` instead of `120`. The replay engine detects the change.
+
+```
+--- Replay result ---
+  execution_id           3a7f1c2d-8b4e-4f9a-a123-5e6d7890bcef
+  matched                False
+  original_hash          7a3d8f2c1e9b04a6d5…
+  replay_hash            f9c1a2e8b7d34f05c2…
+
+--- Field-level diff ---
+  - total                          original=120   replay=95
+
+Replay Status: DIVERGENCE DETECTED ❌
+```
+
+`_diff_payload()` recursively walks both responses and reports every scalar that changed. Only the mutated field appears in the diff.
+
+---
+
+## CLI Commands
+
+After `run_demo.py` completes, copy the `execution_id` from Act 2 output and use these commands:
+
+### Show the execution trace
+
+```bash
+python demo/cli.py show-trace <execution_id> --record-dir .intentusnet/demo/records
+```
+
+```
+Execution 3a7f1c2d-8b4e-4f9a-a123-5e6d7890bcef
+  envelopeHash: 7a3d8f2c1e9b04a6d5…
+  createdUtcIso: 2026-04-28T10:30:00.123456+00:00
+  intent: summarize_complaints
+
+Trace (parent → child):
+  ✓ seq= 1  intent         summarize_complaints   latency=  0.00 ms
+  ✓ seq= 2  llm-planner    plan           latency= 35.13 ms
+  ✓ seq= 3  complaints_db  query          latency= 12.02 ms
+```
+
+### Re-run replay and get JSON
+
+```bash
+python demo/cli.py replay <execution_id> --record-dir .intentusnet/demo/records
+```
+
+```json
+{
+  "execution_id": "3a7f1c2d-8b4e-4f9a-a123-5e6d7890bcef",
+  "matched": true,
+  "original_hash": "7a3d8f2c1e9b04a6d5...",
+  "replay_hash": "7a3d8f2c1e9b04a6d5...",
+  "intent_name": "summarize_complaints",
+  "mode": "shadow",
+  "wall_seconds": 0.0481
+}
+```
+
+Returns exit code `0` if matched, `1` if diverged.
+
+### Verify the WAL hash chain
+
+```bash
+python demo/cli.py verify-log <execution_id> --wal-dir .intentusnet/demo/wal
+```
+
+```json
+{
+  "ok": true,
+  "entry_count": 8,
+  "first_hash": "a1b2c3d4...",
+  "last_hash": "e5f6g7h8...",
+  "signed_count": 0,
+  "signature_failures": 0,
+  "errors": []
+}
+```
+
+`entry_count: 8` = 1 `execution_started` + 3 × (`step_started` + `step_completed`) + 1 `execution_completed`. Returns exit code `0` if the chain is intact, `2` if broken.
+
+---
+
+## Source Files
+
+| File | Role |
+|------|------|
+| `demo/run_demo.py` | Entry point; runs all four acts |
+| `demo/scenarios.py` | `act1_baseline`, `act2_intentus`, `act3_replay_match`, `act4_replay_divergence` |
+| `demo/mock_agents.py` | `MockLLMAgent`, `MockToolAgent`, `baseline_run`, `intentus_run` |
+| `demo/cli.py` | `replay`, `show-trace`, `verify-log` sub-commands |
+| `tests/demo/` | Integration tests for all four acts |
+
+The demo imports exclusively from `src/intentusnet/`. No core logic is reimplemented.

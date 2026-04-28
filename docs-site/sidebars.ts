@@ -102,6 +102,7 @@ const sidebars: SidebarsConfig = {
         id: 'demos/overview',
       },
       items: [
+        'demos/four-act-demo',
         'demos/dangerous-target-filtering',
         'demos/crash-recovery',
         'demos/model-swap-prevention',

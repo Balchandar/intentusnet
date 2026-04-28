@@ -1,8 +1,8 @@
 # IntentusNet
 
-### Deterministic Execution Runtime for Intent Routing and Multi-Agent Systems
+### A runtime layer for AI execution that adds determinism, observability, and enforcement
 
-**Deterministic • Transport-Agnostic • EMCL-Ready • MCP-Compatible**
+**Deterministic • Observable • Enforceable • MCP-Compatible**
 
 ---
 
@@ -182,21 +182,17 @@ Full documentation: [examples/basic-mcp-server/README.md](examples/basic-mcp-ser
 
 ## Why IntentusNet
 
-Modern LLM systems are observable, but **not debuggable**.
+Modern LLM systems produce outputs, but offer no mechanism to verify that the same input produces the same output next week. When a tool silently changes, there is no record to diff against, no signal that the behavior drifted, and no enforcement that would have caught it.
 
-In real production systems, failures are often:
+IntentusNet adds three things the execution layer is missing:
 
-- irreproducible
-- incorrectly blamed on models
-- hidden behind retries and fallback logic
-- impossible to replay or audit
+**Observability** — every execution produces a per-step trace and four independent behavioral signals (latency, error, behavior, policy). You can inspect what happened without re-running the model.
 
-IntentusNet enforces **deterministic execution semantics around LLMs and tools**, so failures become:
+**Determinism** — responses are stored with stable SHA-256 hashes (canonical JSON, `sort_keys=True`). The replay engine re-runs any recorded execution against the live system and compares field-by-field. Any change is detected.
 
-- **Retrievable** — stored responses can be inspected without re-execution
-- **Attributable** — routing decisions are recorded and traceable
-- **Explainable** — execution paths are deterministic given identical input
-- **Provable** — execution fingerprints verify determinism across runs
+**Enforcement** — the circuit breaker and capability governor consume those signals automatically. A misbehaving intent trips the breaker or gets suspended before it causes cascading failures. No custom retry logic required.
+
+The result: failures become attributable, diffs become precise, and behavioral drift becomes detectable.
 
 ---
 
@@ -412,6 +408,82 @@ Including: Python, C#, Go, TypeScript, Rust.
 All demos are runnable and deterministic. Execution responses are recorded and retrievable.
 
 Demo Index: https://intentusnet.com/docs/demos
+
+---
+
+### Four-Act Demo (observability → enforcement → replay → divergence detection)
+
+The quickest way to see IntentusNet's value proposition end-to-end. Runs in under 5 seconds; writes artifacts to `.intentusnet/demo/`.
+
+```bash
+PYTHONPATH=src python demo/run_demo.py
+```
+
+**Act 1 — Baseline (no observability)**
+
+```
+Running the workload directly: model → tool → answer.
+No execution trace, no signals, no replay capability.
+
+  prompt                 Summarize last month's customer complaints
+  answer                 Found 3 complaints; top issue: duplicate charge
+  wall_time_ms           47.35
+[!] Without IntentusNet there is nothing to inspect.
+[!] If the tool silently changed, no one would know.
+```
+
+**Act 2 — IntentusNet (trace + signals + enforcement)**
+
+```
+--- Execution trace (intent → agent → tool) ---
+  ✓ seq= 1  intent         summarize_complaints  latency=  0.00 ms
+  ✓ seq= 2  llm-planner    plan        latency= 35.13 ms
+  ✓ seq= 3  complaints_db  query       latency= 12.02 ms
+
+--- Decomposed signals (independent channels) ---
+  latency_signal         0.0476  ████·····················
+  error_signal           0.0474  ████·····················
+  behavior_signal        0.0476  ████·····················
+  policy_signal          0.0000  ·························
+
+--- Enforcement snapshot ---
+  circuit_state          closed
+  intent_allowed         True
+```
+
+**Act 3 — Replay (MATCH)**
+
+```
+Replay Status: MATCH ✅
+```
+
+The replay engine hashes the live response with `stable_hash()` (canonical JSON, `sort_keys=True`) and compares it to the recorded hash. Floating-point ordering noise is eliminated.
+
+**Act 4 — Mutation → divergence detected**
+
+A bug ships: the tool now returns `total=95` instead of `120`. The replay engine catches it immediately.
+
+```
+--- Field-level diff ---
+  - total                          original=120   replay=95
+
+Replay Status: DIVERGENCE DETECTED ❌
+```
+
+**CLI commands after the demo runs:**
+
+```bash
+# Inspect the trace
+python demo/cli.py show-trace <execution_id> --record-dir .intentusnet/demo/records
+
+# Re-run replay and get JSON output
+python demo/cli.py replay <execution_id> --record-dir .intentusnet/demo/records
+
+# Verify the WAL hash chain
+python demo/cli.py verify-log <execution_id> --wal-dir .intentusnet/demo/wal
+```
+
+Source: [`demo/`](demo/) — `run_demo.py`, `cli.py`, `scenarios.py`, `mock_agents.py`
 
 ---
 
