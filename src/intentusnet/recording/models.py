@@ -77,6 +77,53 @@ def sha256_hex(obj: Any) -> str:
     return stable_hash(obj)
 
 
+# ---------------------------------------------------------------------------
+# Replay-safe hashing
+# ---------------------------------------------------------------------------
+
+# Fields injected by the router into AgentResponse.metadata after the agent
+# returns.  They are non-deterministic (change on every execution) so they
+# must be stripped before comparing recorded vs replayed responses.
+# stable_hash() is intentionally NOT modified — WAL entries and fingerprinting
+# must continue to capture the full response including these fields.
+_REPLAY_EPHEMERAL_FIELDS: frozenset = frozenset({
+    "timestamp",    # router: now_iso() injected at response.metadata.setdefault
+    "traceId",      # router: generate_uuid_hex() injected at route start
+    "agent",        # router: active_agent_name injected at route start
+})
+
+
+def replay_hash(obj: Any) -> str:
+    """
+    Deterministic hash for replay comparison.
+
+    Identical to ``stable_hash()`` except that known router-injected
+    non-deterministic fields are stripped from the top-level ``metadata``
+    dict of the response object before hashing.  This prevents false
+    divergence when ``timestamp`` or ``traceId`` differ between the recorded
+    and replayed execution.
+
+    Usage: exclusively by ``SecurityReplayEngine.compare()`` and
+    ``SecurityReplayEngine.execute()``.  All other hash consumers
+    (WAL, fingerprinting, idempotency) must continue to use ``stable_hash()``.
+    """
+    plain = _to_plain(obj)
+    if isinstance(plain, dict) and isinstance(plain.get("metadata"), dict):
+        # Shallow-copy to avoid mutating the original _to_plain output
+        plain = dict(plain)
+        plain["metadata"] = {
+            k: v
+            for k, v in plain["metadata"].items()
+            if k not in _REPLAY_EPHEMERAL_FIELDS
+        }
+    encoded = json.dumps(
+        plain,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=True,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
 
 # ---------------------------------------------------------------------------
 # Execution Record Models

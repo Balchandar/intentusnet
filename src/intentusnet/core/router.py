@@ -173,8 +173,28 @@ class IntentRouter:
         for m in self._middlewares:
             try:
                 m.before_route(env)
+            except RoutingError:
+                # Security enforcement: let blocking decisions propagate so the
+                # enforcement gate below (or the outer except) terminates routing.
+                raise
             except Exception as ex:
                 self._log.exception("Router middleware before_route failed: %s", ex)
+
+        # ---- Enforcement gate -----------------------------------------------
+        # After all before_route hooks have run, honour any hard-block decision
+        # set by SecurityKernelV2 (stored on env.metadata._sk_v2_blocked).
+        # This flag is ONLY set in enforcing mode (audit_only=False), so this
+        # gate is a no-op for all audit-only deployments.
+        _sk_blocked = getattr(env.metadata, "_sk_v2_blocked", None)
+        if _sk_blocked is not None:
+            last_error = ErrorInfo(
+                code=ErrorCode.CAPABILITY_VIOLATION,
+                message=f"Request blocked by security kernel: {_sk_blocked}",
+                retryable=False,
+                details={"blocked_reason": _sk_blocked},
+            )
+            raise RoutingError(last_error.message)
+        # -----------------------------------------------------------------------
 
         start = now_utc()
         decision: Optional[RouterDecision] = None
@@ -313,7 +333,15 @@ class IntentRouter:
 
             if recorder:
                 recorder.record_final_response(getattr(error_resp, "__dict__", {"response": str(error_resp)}))
-                self._record_store.save(recorder.get_record())
+                try:
+                    self._record_store.save(recorder.get_record())
+                except Exception:
+                    # WAL is best-effort; a write failure must never suppress
+                    # the error response that is already correctly constructed.
+                    self._log.exception(
+                        "WAL record_store.save() failed (error path); "
+                        "execution record lost but response is unaffected"
+                    )
 
             return error_resp
 
@@ -352,7 +380,15 @@ class IntentRouter:
         # Save record (success path)
         if recorder:
             recorder.record_final_response(getattr(response, "__dict__", {"response": str(response)}))
-            self._record_store.save(recorder.get_record())
+            try:
+                self._record_store.save(recorder.get_record())
+            except Exception:
+                # WAL is best-effort; a write failure must never convert a
+                # successful agent response into an exception for the caller.
+                self._log.exception(
+                    "WAL record_store.save() failed (success path); "
+                    "execution record lost but response is unaffected"
+                )
 
         return response
 
@@ -516,6 +552,28 @@ class IntentRouter:
         last_error: Optional[ErrorInfo] = None
         last_success: Optional[AgentResponse] = None
         last_agent_name = "broadcast"
+
+        # Broadcast enforcement gate — belt-and-suspenders check so that a block
+        # decision (set in enforcing mode by SecurityKernelV2.before_route) is
+        # honoured even if the caller bypasses route_intent's top-level gate.
+        _sk_blocked = getattr(env.metadata, "_sk_v2_blocked", None)
+        if _sk_blocked is not None:
+            last_error = ErrorInfo(
+                code=ErrorCode.CAPABILITY_VIOLATION,
+                message=f"Request blocked by security kernel: {_sk_blocked}",
+                retryable=False,
+                details={"blocked_reason": _sk_blocked},
+            )
+            decision = self._make_decision(env, "broadcast", strategy, False, None)
+            return (
+                AgentResponse(
+                    version="1.0", status="error", payload=None,
+                    metadata={}, error=last_error,
+                ),
+                "broadcast",
+                decision,
+                last_error,
+            )
 
         for agent in agents:
             agent_name = agent.definition.name

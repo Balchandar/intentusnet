@@ -55,6 +55,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from ..protocol.intent import IntentEnvelope
 from ..protocol.response import AgentResponse, ErrorInfo
 from ..protocol.enums import ErrorCode
+from ..protocol.errors import RoutingError
 from .backpressure import BackpressureManager, BackpressureMetrics, from_config as bp_from_config
 from .capability_governor_v2 import CapabilityGovernor
 from .causality_index import CausalityIndex, ExecutionNode
@@ -69,8 +70,10 @@ from .types import DegradationState
 logger = logging.getLogger("intentusnet.security.kernel_v2")
 
 # Extra env.metadata sentinels used only by v2
-_SK_V2_BLOCKED      = "_sk_v2_blocked"       # str: reason why blocked (or None)
-_SK_V2_START_PERF   = "_sk_v2_start_perf"    # float: perf_counter at before_route
+_SK_V2_BLOCKED        = "_sk_v2_blocked"       # str: block reason (enforcing mode only)
+_SK_V2_START_PERF     = "_sk_v2_start_perf"    # float: perf_counter at before_route
+_SK_V2_AFTER_ROUTE_RAN = "_sk_v2_after_route_ran"  # bool: set by after_route to prevent
+                                                    # circuit-breaker double-counting in on_error
 
 
 class SecurityKernelV2(SecurityKernelMiddleware):
@@ -217,6 +220,8 @@ class SecurityKernelV2(SecurityKernelMiddleware):
                         intent,
                         payload={"reason": reason, "degradation_state": state.value},
                     )
+                # Emit events before raising so the audit trail is always complete.
+                self._raise_if_enforcing(reason)
                 return
 
         # ------------------------------------------------------------------
@@ -235,6 +240,7 @@ class SecurityKernelV2(SecurityKernelMiddleware):
                         intent,
                         payload={"reason": reason, "circuit_state": "open"},
                     )
+                self._raise_if_enforcing(reason)
                 return
 
         # ------------------------------------------------------------------
@@ -254,6 +260,7 @@ class SecurityKernelV2(SecurityKernelMiddleware):
                         intent,
                         payload={"reason": reason, "whole_intent": True},
                     )
+                self._raise_if_enforcing(reason)
                 return
 
         # ------------------------------------------------------------------
@@ -292,6 +299,11 @@ class SecurityKernelV2(SecurityKernelMiddleware):
     def after_route(self, env: IntentEnvelope, response: AgentResponse) -> None:
         """Run v1 finalization then update all v2 subsystems."""
         super().after_route(env, response)
+
+        # Mark that after_route ran for this envelope so on_error (called by the
+        # router when response.error is set) does not double-count the failure in
+        # the circuit breaker and backpressure manager.
+        setattr(env.metadata, _SK_V2_AFTER_ROUTE_RAN, True)
 
         intent       = env.intent.name
         execution_id = getattr(env.metadata, _SK_EXEC_ID, intent)
@@ -392,16 +404,26 @@ class SecurityKernelV2(SecurityKernelMiddleware):
         intent       = env.intent.name
         execution_id = getattr(env.metadata, _SK_EXEC_ID, intent)
 
-        # Circuit breaker records failure
+        # Double-count guard: the router calls on_error both for routing
+        # exceptions AND for agent error responses (response.error set).
+        # after_route already recorded the failure to the circuit breaker and
+        # backpressure for the latter case.  Skipping here prevents the circuit
+        # from opening at half the configured failure_threshold.
+        _after_route_ran = getattr(env.metadata, _SK_V2_AFTER_ROUTE_RAN, False)
+        if _after_route_ran:
+            # after_route already handled CB + backpressure + EXECUTION_COMPLETED.
+            # No additional recording needed; suppress the duplicate EXECUTION_FAILED
+            # event to keep the audit trail non-redundant.
+            return
+
+        # Routing-exception path: after_route never ran, so record here.
         if self._cb is not None:
             self._cb.record(intent, None, success=False)
 
-        # Backpressure
         if self._bp is not None:
             lag = self._event_bus_v2.queue_depth if self._event_bus_v2 else 0
             self._bp.update(BackpressureMetrics(event_bus_lag=lag))
 
-        # Emit EXECUTION_FAILED
         if self._event_bus_v2:
             self._event_bus_v2.emit(
                 SecurityEventType.EXECUTION_FAILED,
@@ -490,13 +512,18 @@ class SecurityKernelV2(SecurityKernelMiddleware):
 
     def _record_v2_block(self, env: IntentEnvelope, reason: str) -> None:
         """
-        Mark the envelope as blocked by v2 enforcement.
+        Record a block decision for this envelope.
 
-        In audit_only mode the marker is set but enforcement is advisory;
-        the caller (router / gateway) decides whether to honour it.
+        Enforcing mode  (audit_only=False, strict_mode=True):
+            Sets ``_sk_v2_blocked`` on the envelope so the router's enforcement
+            gate can terminate routing as a backstop, then logs at ERROR.
+
+        Audit-only mode (audit_only=True, the default):
+            Logs at WARNING only.  The flag is NOT set, preserving the guarantee
+            that audit-only mode never blocks a request.
         """
-        setattr(env.metadata, _SK_V2_BLOCKED, reason)
         if self._config.is_enforcing():
+            setattr(env.metadata, _SK_V2_BLOCKED, reason)
             logger.error(
                 "SECURITY_KERNEL_V2: BLOCKING intent='%s' reason='%s'",
                 env.intent.name, reason,
@@ -506,3 +533,14 @@ class SecurityKernelV2(SecurityKernelMiddleware):
                 "SECURITY_KERNEL_V2: ADVISORY BLOCK (audit_only) intent='%s' reason='%s'",
                 env.intent.name, reason,
             )
+
+    def _raise_if_enforcing(self, reason: str) -> None:
+        """
+        Raise ``RoutingError`` when the kernel is in enforcing mode.
+
+        Called by each block site in ``before_route`` AFTER event emission so
+        that audit events are always flushed before the exception propagates.
+        No-op in audit-only mode.
+        """
+        if self._config.is_enforcing():
+            raise RoutingError(f"Security kernel blocked: {reason}")

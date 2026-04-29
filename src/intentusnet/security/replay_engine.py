@@ -55,7 +55,7 @@ from .audit import ForensicAuditEntry, ForensicAuditLog
 from .event_bus import SecurityEventBus, SecurityEventType
 from .isolation_manager import IsolationManager
 from .types import ReplayMode
-from ..recording.models import ExecutionRecord, stable_hash
+from ..recording.models import ExecutionRecord, stable_hash, replay_hash
 
 
 # ---------------------------------------------------------------------------
@@ -197,15 +197,15 @@ class SecurityReplayEngine:
 
         Raises ``ReplayDivergenceError`` in ENFORCE mode on divergence.
         """
-        original_hash = stable_hash(record.finalResponse)
-        replay_hash   = stable_hash(new_response)
-        matched       = (original_hash == replay_hash)
+        original_hash  = replay_hash(record.finalResponse)
+        new_hash       = replay_hash(new_response)
+        matched        = (original_hash == new_hash)
         intent_name   = _extract_intent(record)
 
         result = ReplayComparisonResult(
             matched=matched,
             original_hash=original_hash,
-            replay_hash=replay_hash,
+            replay_hash=new_hash,
             execution_id=record.header.executionId,
             intent_name=intent_name,
             mode=self._mode,
@@ -253,7 +253,7 @@ class SecurityReplayEngine:
             exc_token = f"<exception:{type(iso_result.exception).__name__}>"
             result = ReplayComparisonResult(
                 matched=False,
-                original_hash=stable_hash(record.finalResponse),
+                original_hash=replay_hash(record.finalResponse),
                 replay_hash=exc_token,
                 execution_id=record.header.executionId,
                 intent_name=intent_name,
