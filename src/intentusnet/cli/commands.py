@@ -9,7 +9,7 @@ from typing import Any
 
 from intentusnet.recording.store import FileExecutionStore
 from intentusnet.recording.replay import HistoricalResponseEngine
-from intentusnet.recording.diff import ExecutionDiffer
+from intentusnet.recording.diff import diff_records
 from intentusnet.wal.reader import WALReader
 from intentusnet.wal.recovery import RecoveryManager
 
@@ -87,10 +87,9 @@ def diff_executions(args) -> None:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
 
-    differ = ExecutionDiffer()
-    diff = differ.diff(record1, record2)
+    diff = diff_records(record1, record2)
 
-    _output_json(diff.to_dict())
+    _output_json(diff)
 
 
 def retrieve_execution(args) -> None:

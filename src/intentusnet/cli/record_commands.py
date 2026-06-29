@@ -8,7 +8,7 @@ from pathlib import Path
 from datetime import datetime, timedelta
 
 from intentusnet.recording.store import FileExecutionStore
-from intentusnet.recording.diff import ExecutionDiffer
+from intentusnet.recording.diff import diff_records
 from intentusnet.recording.consistency import ConsistencyChecker
 from intentusnet.recording.record_lifecycle import RecordLifecycleManager, RecordHasher
 from .output import output_json, output_table, get_output_format
@@ -103,10 +103,9 @@ def records_diff(args) -> None:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
 
-    differ = ExecutionDiffer()
-    diff = differ.diff(record1, record2)
+    diff = diff_records(record1, record2)
 
-    output_json(diff.to_dict())
+    output_json(diff)
 
 
 def records_stats(args) -> None:
