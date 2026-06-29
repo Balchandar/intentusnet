@@ -50,15 +50,20 @@ IntentusNet is that layer.
 Scan any MCP server's advertised tools for security risk — read-only, never calls a tool:
 
 ```bash
+pip install intentusnet
+
 # HTTP MCP server
-python -m intentusnet.scanner --http http://localhost:5123
+intentus-scan --http http://localhost:5123
 
 # stdio MCP server
-python -m intentusnet.scanner --stdio "npx -y @modelcontextprotocol/server-filesystem /tmp"
+intentus-scan --stdio "npx -y @modelcontextprotocol/server-filesystem /tmp"
 
 # CI gate: exit non-zero if anything HIGH or worse
-python -m intentusnet.scanner --http http://localhost:5123 --fail-on high
+intentus-scan --http http://localhost:5123 --fail-on high
 ```
+
+> Also runnable without installing as a console script:
+> `python -m intentusnet.scanner --http http://localhost:5123`
 
 Example output against a risky server:
 
