@@ -81,19 +81,36 @@ pip install intentusnet
 Run a deterministic intent execution:
 
 ```python
-from intentusnet.runtime import IntentRuntime
-from intentusnet.intent import Intent
-
-runtime = IntentRuntime.load_default()
-
-result = runtime.execute(
-    Intent(
-        name="summarize_text",
-        payload={"text": "Hello world"},
-    )
+from intentusnet import (
+    IntentusRuntime, BaseAgent, AgentResponse,
+    AgentDefinition, Capability, IntentRef,
 )
 
-print(result.output)
+# 1. Define an agent and the intent it handles.
+class EchoAgent(BaseAgent):
+    def __init__(self, router):
+        super().__init__(
+            definition=AgentDefinition(
+                name="echo",
+                capabilities=[Capability(intent=IntentRef(name="EchoIntent", version="1.0"))],
+            ),
+            router=router,
+        )
+
+    def handle_intent(self, env) -> AgentResponse:
+        return AgentResponse.success(
+            payload={"echo": env.payload.get("text", "")},
+            agent=self.definition.name,
+            trace_id=env.metadata.traceId,
+        )
+
+# 2. Wire up the runtime and register the agent.
+runtime = IntentusRuntime()
+runtime.register_agent(EchoAgent)
+
+# 3. Send an intent through the deterministic router.
+resp = runtime.client().send_intent("EchoIntent", {"text": "Hello world"})
+print(resp.payload)   # {'echo': 'Hello world'}
 ```
 
 Inspect and retrieve the stored response (no model re-run):
